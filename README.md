@@ -1,4 +1,6 @@
-#Transformer Capstone
+## Transformer Capstone (MiniGPT)
+
+![alt text](image.png)
 
 MiniGPT is a small scale decoder only transformer language model built from scratch.  
 The goal is to understand how GPT style models work at an architectural and training level, not to achieve large scale performance.
@@ -21,5 +23,7 @@ I produce a working model that can generate text from a prompt.
 - Autoregressive text generation  
 - Training loss and perplexity tracking  
 
-## Project structure
 
+## End Goals
+
+- Match the benchmarks of the model used in the "Attention is All You Need" paper published in 2017
