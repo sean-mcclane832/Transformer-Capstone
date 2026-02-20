@@ -27,3 +27,7 @@ I produce a working model that can generate text from a prompt.
 ## End Goals
 
 - Match the benchmarks of the model used in the "Attention is All You Need" paper published in 2017
+
+## Contact Info:
+email: swhall2008@gmail.com
+cell: +1(732)500-5396
