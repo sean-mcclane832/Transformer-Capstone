@@ -1,7 +1,8 @@
-# text = "Ｕｎｉｃｏｄｅ! 🅤🅝🅘🅒🅞🅓🅔‽ 🇺‌🇳‌🇮‌🇨‌🇴‌🇩‌🇪! 😄 The very name strikes fear and awe into the hearts of programmers worldwide. We all know we ought to “support Unicode” in our software (whatever that means—like using wchar_t for all the strings, right?). But Unicode can be abstruse, and diving into the thousand-page Unicode Standard plus its dozens of supplementary annexes, reports, and notes can be more than a little intimidating. I don’t blame programmers for still finding the whole thing mysterious, even 30 years after Unicode’s inception."
-# tokens = text.encode('utf-8')
-# print(tokens)
-# print('---')
+
+
+
+with open('input.txt', 'r', encoding='utf-8') as f:
+    text = f.read()
 
 def get_stats(ids):
     counts = {}
@@ -9,12 +10,7 @@ def get_stats(ids):
         counts[pair] = counts.get(pair, 0) + 1
     return counts
 
-# stats = get_stats(tokens)
-# print(stats)
-# print(sorted(((v,k) for k,v in stats.items()), reverse=True))
 
-# top_pair = max(stats, key=stats.get)
-# print(top_pair)
 
 def merge(ids, pair, new_id):
     new_ids = []
@@ -51,3 +47,48 @@ for i in range(num_merges):
 print("tokens length:", len(tokens))
 print("ids length:", len(ids))
 print(f"compression ratio: {len(tokens) / len(ids):.2f}X")
+
+vocab = {idx: bytes([idx]) for idx in range(256)}
+for (p0, p1), idx in merges.items():
+    vocab[idx] = vocab[p0] + vocab[p1]
+
+def decode(ids):
+  # given ids (list of integers), return Python string
+  tokens = b"".join(vocab[idx] for idx in ids)
+  text = tokens.decode("utf-8", errors="replace")
+  return text
+
+print(decode([126]))
+
+def encode(text: str):
+    ids = list(text.encode("utf-8"))
+
+    while True:
+        stats = get_stats(ids)
+        best_pair = None
+        best_idx = None
+
+        for pair in stats.keys():
+            if pair in merges:
+                idx = merges[pair]
+                if best_idx is None or idx < best_idx:
+                    best_idx = idx
+                    best_pair = pair
+
+        if best_pair is None:
+            break
+
+        ids = merge(ids, best_pair, best_idx)
+
+    return ids
+
+""" sample = text
+enc = encode(sample)
+dec = decode(enc)
+
+print("original:", sample)
+print("encoded length:", len(enc))
+print("decoded:", dec)
+print("match:", sample == dec)
+ """
+
