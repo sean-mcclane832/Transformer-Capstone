@@ -8,13 +8,14 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tokenizer.token_class import ByteBPETokenizer
+from utils.config import TOKENIZER_CONFIG, GENERAL_CONFIG
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Test a trained tokenizer on sample text.")
     parser.add_argument(
         "--tokenizer",
-        default=str(ROOT / "tokenizer" / "tokenizer.json"),
+        default=TOKENIZER_CONFIG["output"],
         help="Path to tokenizer JSON file.",
     )
     parser.add_argument(
@@ -29,7 +30,7 @@ def main() -> None:
     samples = [args.text] if args.text is not None else [
         "To be, or not to be: that is the question.",
         "Friends, Romans, countrymen, lend me your ears.",
-        "Hello World 😄",
+        "Hello World"
     ]
 
     print(f"Loaded tokenizer: {args.tokenizer}")

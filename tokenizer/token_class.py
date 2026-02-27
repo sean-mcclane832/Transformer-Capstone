@@ -1,4 +1,5 @@
 # tokenizer/token_class.py
+
 import json
 from typing import Dict, List, Tuple, Optional
 
@@ -82,6 +83,7 @@ class ByteBPETokenizer:
             new_id = 256 + i
             ids = self._merge_once(ids, pair, new_id)
             self.merges[pair] = new_id
+            print(f'Merge {new_id}: out of {num_merges}')
 
         self._rebuild_vocab()
 
