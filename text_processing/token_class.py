@@ -1,4 +1,4 @@
-# tokenizer/token_class.py
+#byte-level bpe tokenizer implementation
 
 import json
 from typing import Dict, List, Tuple, Optional
@@ -29,10 +29,10 @@ class ByteBPETokenizer:
             self.bos_id = vocab_size - 2
             self.eos_id = vocab_size - 1
 
-        # (a, b) -> new_id
+        #map token pairs to their merged token id
         self.merges: Dict[Tuple[int, int], int] = {}
 
-        # id -> bytes (only for non-special tokens)
+        #map token ids to raw bytes for non-special tokens
         self.vocab: Dict[int, bytes] = {i: bytes([i]) for i in range(256)}
 
     def _get_stats(self, ids: List[int]) -> Dict[Tuple[int, int], int]:
@@ -61,7 +61,7 @@ class ByteBPETokenizer:
         ids = list(text.encode("utf-8"))
 
         if self.add_special_tokens:
-            merges_target_vocab = self.vocab_size - 2  # reserve bos/eos
+            merges_target_vocab = self.vocab_size - 2  #keep room for bos/eos
         else:
             merges_target_vocab = self.vocab_size
 
@@ -131,7 +131,7 @@ class ByteBPETokenizer:
             if skip_special_tokens and (idx == self.bos_id or idx == self.eos_id):
                 continue
             if idx not in self.vocab:
-                # Unknown id, skip rather than crash
+                #skip unknown ids instead of failing
                 continue
             chunks.append(self.vocab[idx])
 
@@ -159,7 +159,7 @@ class ByteBPETokenizer:
             add_special_tokens=bool(data.get("add_special_tokens", True)),
         )
 
-        # Trust file values so ids remain stable even if you change constructor defaults later
+        #use saved ids so they stay stable even if constructor defaults change
         tok.bos_id = data.get("bos_id", tok.bos_id)
         tok.eos_id = data.get("eos_id", tok.eos_id)
 
