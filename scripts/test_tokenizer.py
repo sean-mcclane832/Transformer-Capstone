@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from tokenizer.token_class import ByteBPETokenizer
+from text_processing.token_class import ByteBPETokenizer
 from utils.config import TOKENIZER_CONFIG, GENERAL_CONFIG
 
 

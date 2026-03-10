@@ -4,7 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 GENERAL_CONFIG = {
-    'vocab_size': 4096
+    'vocab_size': 8192
 }
 
 TOKENIZER_CONFIG = {
