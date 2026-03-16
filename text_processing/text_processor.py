@@ -11,7 +11,10 @@ class TextEmbedder:
 
     def embed_text(self, text: str) -> torch.Tensor:
         #tokenize
-        ids = self.tokenizer.encode(text, add_bos = True, add_eos = True)
+        if text is None:
+            ids = self.tokeknizer.encode("", add_bos = False, add_eos = False)
+        else:
+            ids = self.tokenizer.encode(text, add_bos = True, add_eos = True)
         #add positional encodings and convert to tensor
         ids_tensor = torch.tensor(ids).unsqueeze(0)  #add batch dimension
         embeddings = self.input_embeddings(ids_tensor)

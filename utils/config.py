@@ -8,9 +8,12 @@ GENERAL_CONFIG = {
 }
 
 TOKENIZER_CONFIG = {
-    "input": str(ROOT / "data" / "raw" / "input.txt"),
+    "input": [
+        str(ROOT / "data" / "raw" / "input.txt"),
+        str(ROOT / "data" / "raw" / "greatgatsby.txt"),
+    ],
     "output": str(ROOT / "tokenizer" / "tokenizer.json"),
     "min_frequency": 4,
-    "max_chars": 250000,
+    "max_chars": 0,
     "add_special_tokens": True,
 }
