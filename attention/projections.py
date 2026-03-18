@@ -1,5 +1,15 @@
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 import torch
 import torch.nn as nn
+import text_processing.text_processor
+import utils.config
+import utils.config
 
 class AttentionProjections(nn.Module):
     def __init__(self, d_model):
@@ -17,10 +27,3 @@ class AttentionProjections(nn.Module):
         V = self.W_v(x)
 
         return Q, K, V
-    
-# x = torch.randn(2, 5, 64)
-# proj = AttentionProjections(64)
-
-# Q, K, V = proj(x)
-
-# print(Q)  # (2, 5, 64)

@@ -4,10 +4,10 @@ import torch
 import torch.nn as nn
 
 class TextEmbedder:
-    def __init__(self, tokenizer_path: str, d_model: int, vocab_size: int, max_seq_len: int):
+    def __init__(self, tokenizer_path: str, d_model: int, vocab_size: int, max_seq_len: int, dropout: float = 0.1):
         self.tokenizer = ByteBPETokenizer.load(tokenizer_path)
         self.input_embeddings = InputEmbeddings(d_model, vocab_size)
-        self.positional_encoding = PositionalEncoding(d_model, max_seq_len)
+        self.positional_encoding = PositionalEncoding(d_model, max_seq_len, dropout)
 
     def embed_text(self, text: str) -> torch.Tensor:
         #tokenize
