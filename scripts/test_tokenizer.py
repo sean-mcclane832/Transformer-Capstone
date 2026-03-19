@@ -8,7 +8,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from text_processing.token_class import ByteBPETokenizer
-from utils.config import TOKENIZER_CONFIG, GENERAL_CONFIG
+from utils.config import SCRIPT_CONFIG, TOKENIZER_CONFIG
 
 
 def main() -> None:
@@ -27,11 +27,11 @@ def main() -> None:
 
     tok = ByteBPETokenizer.load(args.tokenizer)
 
-    samples = [args.text] if args.text is not None else [
-        "To be, or not to be: that is the question.",
-        "Friends, Romans, countrymen, lend me your ears.",
-        "Hello World"
-    ]
+    samples = (
+        [args.text]
+        if args.text is not None
+        else SCRIPT_CONFIG["test_tokenizer"]["samples"]
+    )
 
     print(f"Loaded tokenizer: {args.tokenizer}")
     print(f"vocab_size={tok.vocab_size}, bos_id={tok.bos_id}, eos_id={tok.eos_id}")

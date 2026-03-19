@@ -1,6 +1,16 @@
+import sys
+from pathlib import Path
 
-with open('C:\\Users\\SeanM\\OneDrive\\Documents\\GitHub\\Transformer-Capstone\\data\\raw\\input.txt', 'r', encoding='utf-8') as f:
-    text = f.read()
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from utils.config import GENERAL_CONFIG, SCRIPT_CONFIG, TOKENIZER_CONFIG
+
+
+texts = [Path(path).read_text(encoding="utf-8") for path in TOKENIZER_CONFIG["input"]]
+text = "\n".join(texts)
 
 def get_stats(ids):
     counts = {}
@@ -29,7 +39,7 @@ tokens = text.encode('utf-8')
 tokens = list(map(int, tokens))
 #debug helper: print(tokens)
 
-vocab_size = 5000
+vocab_size = GENERAL_CONFIG["vocab_size"]
 num_merges = vocab_size - 256
 ids = list(tokens)
 
@@ -56,7 +66,7 @@ def decode(ids):
   text = tokens.decode("utf-8", errors="replace")
   return text
 
-print(decode([126]))
+print(decode(SCRIPT_CONFIG["utf8_demo"]["decode_sample_ids"]))
 
 def encode(text: str):
     ids = list(text.encode("utf-8"))

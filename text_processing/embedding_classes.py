@@ -3,9 +3,15 @@ import math
 import torch
 import torch.nn as nn
 
+from utils.config import GENERAL_CONFIG
+
 
 class InputEmbeddings(nn.Module):
-    def __init__(self, d_model: int, vocab_size: int):
+    def __init__(
+        self,
+        d_model: int = GENERAL_CONFIG["d_model"],
+        vocab_size: int = GENERAL_CONFIG["vocab_size"],
+    ):
         super().__init__()
 
         self.d_model = d_model
@@ -17,7 +23,12 @@ class InputEmbeddings(nn.Module):
 
 
 class PositionalEncoding(nn.Module):
-    def __init__(self, d_model: int, seq_len: int, dropout: float) -> None:
+    def __init__(
+        self,
+        d_model: int = GENERAL_CONFIG["d_model"],
+        seq_len: int = GENERAL_CONFIG["max_seq_len"],
+        dropout: float = GENERAL_CONFIG["dropout"],
+    ) -> None:
         super().__init__()
         self.d_model = d_model
         self.seq_len = seq_len

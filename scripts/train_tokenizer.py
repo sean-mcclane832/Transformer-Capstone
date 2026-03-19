@@ -8,7 +8,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from text_processing.token_class import ByteBPETokenizer
-from utils.config import TOKENIZER_CONFIG, GENERAL_CONFIG
+from utils.config import GENERAL_CONFIG, SCRIPT_CONFIG, TOKENIZER_CONFIG
 
 
 def main() -> None:
@@ -89,7 +89,7 @@ def main() -> None:
 
     tok2 = ByteBPETokenizer.load(str(output_path))
     ids = tok2.encode(
-        "hello world!",
+        SCRIPT_CONFIG["train_tokenizer"]["preview_text"],
         add_bos=not args.no_special_tokens,
         add_eos=not args.no_special_tokens,
     )

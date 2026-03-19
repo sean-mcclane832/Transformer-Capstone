@@ -14,17 +14,7 @@ if str(ROOT) not in sys.path:
 from text_processing.embedding_classes import InputEmbeddings, PositionalEncoding
 from text_processing.text_processor import TextEmbedder
 from text_processing.token_class import ByteBPETokenizer
-from utils.config import GENERAL_CONFIG, TOKENIZER_CONFIG
-import text_processing.text_processor as text_processor
-
-
-class _PositionalEncodingWithDefault(PositionalEncoding):
-    def __init__(self, d_model: int, seq_len: int, dropout: float = 0.0) -> None:
-        super().__init__(d_model, seq_len, dropout)
-
-
-# Ensure TextEmbedder can construct positional encodings without passing dropout.
-text_processor.PositionalEncoding = _PositionalEncodingWithDefault
+from utils.config import GENERAL_CONFIG, SCRIPT_CONFIG, TOKENIZER_CONFIG
 
 
 CheckResult = Tuple[str, str, str]
@@ -114,19 +104,19 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--text",
-        default="Hello world from the embedder test script.",
+        default=SCRIPT_CONFIG["test_embedder"]["text"],
         help="Sample text used for embedder checks.",
     )
     parser.add_argument(
         "--d-model",
         type=int,
-        default=512,
+        default=GENERAL_CONFIG["d_model"],
         help="Embedding width used for the tests.",
     )
     parser.add_argument(
         "--max-seq-len",
         type=int,
-        default=16,
+        default=GENERAL_CONFIG["max_seq_len"],
         help="Maximum sequence length used for the tests.",
     )
     return parser.parse_args()
@@ -156,7 +146,10 @@ def main() -> None:
     vocab_size = tokenizer.vocab_size if tokenizer is not None else GENERAL_CONFIG["vocab_size"]
 
     def test_input_embeddings_values() -> str:
-        layer = InputEmbeddings(4, 6)
+        layer = InputEmbeddings(
+            SCRIPT_CONFIG["test_embedder"]["input_embedding_d_model"],
+            SCRIPT_CONFIG["test_embedder"]["input_embedding_vocab_size"],
+        )
         known_weights = torch.tensor(
             [
                 [0.0, 1.0, 2.0, 3.0],
@@ -186,10 +179,21 @@ def main() -> None:
 
     def test_positional_encoding() -> str:
         nonlocal positional_encoding
-        positional_encoding = PositionalEncoding(4, 6, 0.0)
-        sample = torch.zeros(1, 3, 4)
+        positional_encoding = PositionalEncoding(
+            SCRIPT_CONFIG["test_embedder"]["positional_d_model"],
+            SCRIPT_CONFIG["test_embedder"]["positional_seq_len"],
+            SCRIPT_CONFIG["test_embedder"]["positional_dropout"],
+        )
+        sample = torch.zeros(
+            1,
+            SCRIPT_CONFIG["test_embedder"]["positional_sample_seq_len"],
+            SCRIPT_CONFIG["test_embedder"]["positional_d_model"],
+        )
         actual = positional_encoding(sample)
-        expected = build_expected_positional_encoding(3, 4).unsqueeze(0)
+        expected = build_expected_positional_encoding(
+            SCRIPT_CONFIG["test_embedder"]["positional_sample_seq_len"],
+            SCRIPT_CONFIG["test_embedder"]["positional_d_model"],
+        ).unsqueeze(0)
         assert_close(actual, expected, name="PositionalEncoding output")
         return f"position_0={tensor_preview(actual[0, 0])}, position_1={tensor_preview(actual[0, 1])}"
 
@@ -272,7 +276,10 @@ def main() -> None:
 
         add_result(results, "TextEmbedder.embed_text handles empty input", test_embed_text_empty_input)
 
-        long_text = " ".join(["transformer"] * (args.max_seq_len * 8))
+        long_text = " ".join(
+            ["transformer"]
+            * (args.max_seq_len * SCRIPT_CONFIG["test_embedder"]["long_text_multiplier"])
+        )
         long_ids = embedder.tokenizer.encode(long_text, add_bos=True, add_eos=True)
         if len(long_ids) > args.max_seq_len:
             def test_embed_text_long_input() -> str:
