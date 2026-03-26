@@ -44,7 +44,7 @@ SCRIPT_CONFIG = {
         "samples": [
             "To be, or not to be: that is the question.",
             "Friends, Romans, countrymen, lend me your ears.",
-            "Hello World",
+            "hello world",
         ],
     },
     "utf8_demo": {
