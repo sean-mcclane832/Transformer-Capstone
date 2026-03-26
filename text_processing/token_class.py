@@ -3,6 +3,8 @@
 import json
 from typing import Dict, List, Tuple, Optional
 
+from utils.config import GENERAL_CONFIG, TOKENIZER_CONFIG
+
 
 class ByteBPETokenizer:
     """
@@ -14,7 +16,11 @@ class ByteBPETokenizer:
     - Special tokens: bos_id=vocab_size-2, eos_id=vocab_size-1
     """
 
-    def __init__(self, vocab_size: int, add_special_tokens: bool = True):
+    def __init__(
+        self,
+        vocab_size: int = GENERAL_CONFIG["vocab_size"],
+        add_special_tokens: bool = TOKENIZER_CONFIG["add_special_tokens"],
+    ):
         if vocab_size < 256:
             raise ValueError("vocab_size must be >= 256")
 

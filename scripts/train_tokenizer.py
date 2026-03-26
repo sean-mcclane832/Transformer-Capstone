@@ -8,15 +8,15 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from text_processing.token_class import ByteBPETokenizer
-from utils.config import TOKENIZER_CONFIG, GENERAL_CONFIG
+from utils.config import GENERAL_CONFIG, SCRIPT_CONFIG, TOKENIZER_CONFIG
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train a byte-level BPE tokenizer.")
     parser.add_argument(
         "--input",
-        default=TOKENIZER_CONFIG["input"],
-        help="Path to training text file.",
+        action="append",
+        help="Path to a training text file. Repeat to include multiple files.",
     )
     parser.add_argument(
         "--output",
@@ -48,15 +48,33 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    input_path = Path(args.input)
+    if args.input:
+        input_paths = [Path(p) for p in args.input]
+    else:
+        configured_inputs = TOKENIZER_CONFIG["input"]
+        if isinstance(configured_inputs, (list, tuple)):
+            input_paths = [Path(p) for p in configured_inputs]
+        else:
+            input_paths = [Path(configured_inputs)]
+
+    if not input_paths:
+        raise ValueError("No input files provided for tokenizer training.")
+
+    missing = [str(p) for p in input_paths if not p.exists()]
+    if missing:
+        missing_list = ", ".join(missing)
+        raise FileNotFoundError(f"Tokenizer input file(s) not found: {missing_list}")
+
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    text = input_path.read_text(encoding="utf-8")
+    text_chunks = [p.read_text(encoding="utf-8") for p in input_paths]
+    text = "\n".join(text_chunks)
     if args.max_chars > 0:
         text = text[: args.max_chars]
     print(
-        f"Training on {len(text):,} chars | vocab_size={args.vocab_size} | "
+        f"Training on {len(text):,} chars from {len(input_paths)} file(s) | "
+        f"vocab_size={args.vocab_size} | "
         f"min_frequency={args.min_frequency} | special_tokens={not args.no_special_tokens}"
     )
 
@@ -71,7 +89,7 @@ def main() -> None:
 
     tok2 = ByteBPETokenizer.load(str(output_path))
     ids = tok2.encode(
-        "hello world!",
+        SCRIPT_CONFIG["train_tokenizer"]["preview_text"],
         add_bos=not args.no_special_tokens,
         add_eos=not args.no_special_tokens,
     )
