@@ -44,7 +44,7 @@ def main() -> None:
         print(f"Sample {i}:")
         print(f"  text    : {ascii(text)}")
         print(f"  ids     : {ids}")
-        print(f"  ids_decoded: {ByteBPETokenizer.decode(ids)}")
+        print(f"  decoded : {decoded}")
         print(f"  n_tokens: {len(ids)}")
         print(f"  decoded : {ascii(decoded)}")
         print(f"  match   : {decoded == text}")
