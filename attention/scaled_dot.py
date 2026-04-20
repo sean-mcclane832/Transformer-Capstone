@@ -1,27 +1,23 @@
-import torch
 import math
-import torch.nn as nn
-import torch.nn.functional as F
 
-from utils.config import GENERAL_CONFIG
+import torch
+
+from attention.softmax import softmax
 
 
-class ScaledDotAttention(nn.Module):
-    def __init__(self, d_model: int = GENERAL_CONFIG["d_model"], dropout: float = GENERAL_CONFIG["dropout"]) -> None:
-        super().__init__()
-        self.scale = math.sqrt(d_model)
-        self.dropout = nn.Dropout(dropout)
+def scaled_dot_product_attention(Q, K, V, mask=None, dropout=None):
+    # Q, K, V: (batch, n_heads, seq_len, d_k)
+    d_k = Q.size(-1)
+    scores = torch.matmul(Q, K.transpose(-2, -1)) / math.sqrt(d_k)  # (batch, n_heads, seq_len, seq_len)
 
-    def forward(self, Q, K, V, mask=None):
-        # Q, K, V: (batch, seq_len, d_model)
-        scores = torch.matmul(Q, K.transpose(-2, -1)) / self.scale  # (batch, seq_len, seq_len)
+    if mask is not None:
+        scores = scores.masked_fill(mask == 0, float('-inf'))
 
-        if mask is not None:
-            scores = scores.masked_fill(mask == 0, float('-inf'))
+    weights = softmax(scores, dim=-1)  # (batch, n_heads, seq_len, seq_len)
 
-        weights = F.softmax(scores, dim=-1)  # (batch, seq_len, seq_len)
-        weights = self.dropout(weights)
+    if dropout is not None:
+        weights = dropout(weights)
 
-        output = torch.matmul(weights, V)  # (batch, seq_len, d_model)
-        return output, weights
+    output = torch.matmul(weights, V)  # (batch, n_heads, seq_len, d_k)
+    return output, weights
 
