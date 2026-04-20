@@ -52,7 +52,9 @@ Raw text
 ```
 Transformer-Capstone/
 ├── attention/
-│   └── projections.py          # AttentionProjections (W_q, W_k, W_v)
+│   ├── projections.py          # AttentionProjections (W_q, W_k, W_v)
+│   ├── scaled_dot.py           # scaled_dot_product_attention (plain function)
+│   └── mask.py                 # causal_mask() plain function
 ├── data/
 │   └── raw/
 │       ├── input.txt           # Shakespeare corpus
@@ -60,15 +62,20 @@ Transformer-Capstone/
 ├── scripts/
 │   ├── train_tokenizer.py      # CLI: trains and saves BPE tokenizer
 │   ├── test_embedder.py        # Unit tests for embedding pipeline
-│   └── test_projections.py     # Unit tests for Q/K/V projections
+│   ├── test_projections.py     # Unit tests for Q/K/V projections
+│   └── test_tokenizer.py       # Unit tests for tokenizer
 ├── text_processing/
 │   ├── token_class.py          # ByteBPETokenizer class
 │   ├── embedding_classes.py    # InputEmbeddings, PositionalEncoding
-│   └── text_processor.py       # TextEmbedder pipeline (tokenize → embed)
+│   ├── text_processor.py       # TextEmbedder pipeline (tokenize → embed)
+│   └── utf-8.py                # Early scratch/reference BPE demo (not used in pipeline)
 ├── tokenizer/
 │   └── tokenizer.json          # Saved trained BPE tokenizer
 ├── utils/
-│   └── config.py               # GENERAL_CONFIG, TOKENIZER_CONFIG, SCRIPT_CONFIG
+│   ├── config.py               # GENERAL_CONFIG, TOKENIZER_CONFIG, SCRIPT_CONFIG
+│   ├── seed.py                 # set_seed() — deterministic seeding helper
+│   ├── helpers.py              # Placeholder (empty)
+│   └── io.py                   # Placeholder (empty)
 ├── CLAUDE.md                   # This file
 └── README.md
 ```
@@ -118,31 +125,45 @@ Training runs will scale up significantly (see Target Scale below).
 - `forward(x)` → `(Q, K, V)` each of shape `(batch, seq_len, d_model)`
 - Note: these are **full-dimensional** projections. Head splitting happens downstream in `MultiHeadAttention`.
 
+### `attention/scaled_dot.py` — `scaled_dot_product_attention`
+- Plain function, no learnable parameters — dropout is passed in from `MultiHeadAttention` as an `nn.Dropout` instance
+- Scales by `sqrt(d_k)` where `d_k = Q.size(-1)` — inferred from input, no hardcoded config value
+- Accepts optional `mask` and `dropout` arguments; mask applied via `masked_fill(mask == 0, -inf)` before softmax
+- Signature: `scaled_dot_product_attention(Q, K, V, mask=None, dropout=None)` → `(output, weights)`
+- Expected input shape: `(batch, n_heads, seq_len, d_k)`
+
+### `attention/mask.py` — `causal_mask`
+- Plain function: `causal_mask(seq_len)` → lower-triangular `(seq_len, seq_len)` tensor of ones
+- No learnable parameters; shape must be broadcast-compatible with `(batch, n_heads, seq_len, seq_len)` when used in multi-head attention
+
+### `utils/seed.py` — `set_seed`
+- `set_seed(seed)` — sets `random`, `numpy`, `torch`, and `torch.cuda` seeds plus `PYTHONHASHSEED`; enables `cudnn.deterministic` and disables `cudnn.benchmark`
+
 ---
 
 ## What Has NOT Been Built Yet
 
 Implement these in order:
 
-1. **Scaled dot-product attention function** — plain function, NOT `nn.Module`
-2. **Multi-head splitting and parallel attention** — reshape Q/K/V for `n_heads`
-3. **Head concatenation + output projection (W_O)** → full `MultiHeadAttention` module
-4. **Feed-forward block** — two linear layers with ReLU/GELU, inner dim = `4 * d_model`
-5. **Full transformer block** — attention + FFN + residual connections + layer norm
-6. **Model assembly** — embedder + N blocks + final projection
-7. **Training loop** — DataLoader, forward pass, cross-entropy loss, backward, optimizer, LR scheduling, gradient clipping, logging
-8. **Generation function** — greedy / temperature / top-k / nucleus sampling
-9. **CLI or minimal interface** — prompt in, generated text out
+1. **Multi-head splitting and parallel attention** — reshape Q/K/V for `n_heads`; wire `ScaledDotAttention` + `causal_mask` together
+2. **Head concatenation + output projection (W_O)** → full `MultiHeadAttention` module
+3. **Feed-forward block** — two linear layers with ReLU/GELU, inner dim = `4 * d_model`
+4. **Full transformer block** — attention + FFN + residual connections + layer norm
+5. **Model assembly** — embedder + N blocks + final projection
+6. **Training loop** — DataLoader, forward pass, cross-entropy loss, backward, optimizer, LR scheduling, gradient clipping, logging
+7. **Generation function** — greedy / temperature / top-k / nucleus sampling
+8. **CLI or minimal interface** — prompt in, generated text out
 
 ---
 
 ## Critical Implementation Notes
 
 ### Scaled dot-product attention
-- Implement as a **plain function**, not `nn.Module` — it has no learnable parameters
-- Scale by `d_k = d_model // n_heads`, NOT `d_model`
-- Apply causal mask **before** softmax; mask shape must broadcast correctly over `(batch, n_heads, seq_len, seq_len)`
-- Mask value: `-inf` (or a large negative like `-1e9`) on future positions so softmax zeros them out
+- Plain function `scaled_dot_product_attention` in `attention/scaled_dot.py` — no learnable parameters
+- Scales by `sqrt(d_k)` inferred from `Q.size(-1)`; works correctly once Q/K/V are split per head
+- `dropout` is an `nn.Dropout` instance owned by `MultiHeadAttention` and passed in at call time
+- Causal mask is generated by `causal_mask()` in `attention/mask.py`; shape must broadcast over `(batch, n_heads, seq_len, seq_len)`
+- Mask convention: `mask == 0` positions are filled with `-inf` before softmax
 
 ### Multi-head attention
 - Split Q, K, V by reshaping: `(batch, seq_len, d_model)` → `(batch, n_heads, seq_len, d_k)`
@@ -196,8 +217,8 @@ GPT-2 Medium: d_model=1024, 16 heads, 24 layers, ~345M params
 | 1 | BPE tokenizer with BOS/EOS | ✅ Complete |
 | 2 | Token embeddings + positional encoding | ✅ Complete |
 | 3 | Q/K/V projection layers | ✅ Complete |
-| 4 | Scaled dot-product attention + causal mask | 🔲 Next |
-| 5 | Full MultiHeadAttention module | 🔲 |
+| 4 | Scaled dot-product attention + causal mask | ✅ Complete |
+| 5 | Full MultiHeadAttention module | 🔲 Next |
 | 6 | Feed-forward block | 🔲 |
 | 7 | Full transformer block (single, unit-tested) | 🔲 |
 | 8 | Stacked blocks + valid full forward pass | 🔲 |
