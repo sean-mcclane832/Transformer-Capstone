@@ -1,0 +1,161 @@
+import sys
+from pathlib import Path
+from typing import Callable, List, Tuple
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+import torch
+from utils.config import GENERAL_CONFIG
+from transformer.feed_forward import FeedForward
+
+
+CheckResult = Tuple[str, str, str]
+
+
+def run_check(name: str, check: Callable[[], str]) -> CheckResult:
+    try:
+        return ("PASS", name, check())
+    except Exception as exc:
+        return ("FAIL", name, f"{type(exc).__name__}: {exc}")
+
+
+def add_result(results: List[CheckResult], name: str, check: Callable[[], str]) -> None:
+    results.append(run_check(name, check))
+
+
+def make_module() -> FeedForward:
+    ffn = FeedForward()
+    ffn.eval()
+    return ffn
+
+
+def make_input(batch: int = 2) -> torch.Tensor:
+    seq_len = GENERAL_CONFIG["max_seq_len"]
+    d_model = GENERAL_CONFIG["d_model"]
+    torch.manual_seed(GENERAL_CONFIG["seed"])
+    return torch.randn(batch, seq_len, d_model)
+
+
+def main() -> None:
+    results: List[CheckResult] = []
+
+    batch   = 2
+    seq_len = GENERAL_CONFIG["max_seq_len"]
+    d_model = GENERAL_CONFIG["d_model"]
+    d_ff    = GENERAL_CONFIG["d_ff"]
+
+    print(f"Config: batch={batch}, seq_len={seq_len}, d_model={d_model}, d_ff={d_ff}")
+    print()
+
+    # ------------------------------------------------------------------ #
+    # 1. Output shape                                                      #
+    # ------------------------------------------------------------------ #
+    def test_output_shape() -> str:
+        ffn = make_module()
+        x = make_input(batch)
+        out = ffn(x)
+        expected = (batch, seq_len, d_model)
+        if out.shape != torch.Size(expected):
+            raise AssertionError(f"expected {expected}, got {tuple(out.shape)}")
+        return f"output.shape={tuple(out.shape)}"
+
+    add_result(results, "output shape is (batch, seq_len, d_model)", test_output_shape)
+
+    # ------------------------------------------------------------------ #
+    # 2. Output is not identical to input (transformation is non-trivial) #
+    # ------------------------------------------------------------------ #
+    def test_output_differs_from_input() -> str:
+        ffn = make_module()
+        x = make_input(batch)
+        out = ffn(x)
+        if torch.allclose(out, x):
+            raise AssertionError("output is identical to input — network has no effect")
+        max_diff = (out - x).abs().max().item()
+        return f"max diff from input={max_diff:.4f}"
+
+    add_result(results, "output differs from input", test_output_differs_from_input)
+
+    # ------------------------------------------------------------------ #
+    # 3. Each position is processed independently                         #
+    #    Changing one token position should not affect others             #
+    # ------------------------------------------------------------------ #
+    def test_position_independence() -> str:
+        ffn = make_module()
+        x = make_input(batch)
+
+        out_original = ffn(x)
+
+        x_modified = x.clone()
+        x_modified[:, 0, :] = torch.zeros(d_model)  # zero out position 0
+        out_modified = ffn(x_modified)
+
+        # Positions 1..end should be completely unchanged
+        diff = (out_original[:, 1:, :] - out_modified[:, 1:, :]).abs().max().item()
+        if diff > 1e-6:
+            raise AssertionError(
+                f"modifying position 0 changed other positions — max diff={diff:.2e}"
+            )
+        return f"other positions unaffected (max diff={diff:.2e})"
+
+    add_result(results, "positions are processed independently", test_position_independence)
+
+    # ------------------------------------------------------------------ #
+    # 4. Dropout is off in eval mode (deterministic output)               #
+    # ------------------------------------------------------------------ #
+    def test_eval_mode_deterministic() -> str:
+        ffn = make_module()  # already in eval mode
+        x = make_input(batch)
+        out1 = ffn(x)
+        out2 = ffn(x)
+        if not torch.allclose(out1, out2):
+            max_diff = (out1 - out2).abs().max().item()
+            raise AssertionError(f"outputs differ across two forward passes — max diff={max_diff:.2e}")
+        return "two forward passes produce identical output"
+
+    add_result(results, "eval mode is deterministic (dropout off)", test_eval_mode_deterministic)
+
+    # ------------------------------------------------------------------ #
+    # 5. W_1 intermediate shape passes through d_ff                      #
+    # ------------------------------------------------------------------ #
+    def test_intermediate_expansion() -> str:
+        ffn = make_module()
+        x = make_input(batch)
+        # Hook into W_1 output to check intermediate shape
+        intermediate = {}
+        def hook(module, inp, out):
+            intermediate["shape"] = tuple(out.shape)
+        handle = ffn.W_1.register_forward_hook(hook)
+        ffn(x)
+        handle.remove()
+        expected = (batch, seq_len, d_ff)
+        if intermediate["shape"] != expected:
+            raise AssertionError(f"expected {expected}, got {intermediate['shape']}")
+        return f"W_1 output shape={intermediate['shape']}"
+
+    add_result(results, f"W_1 expands to d_ff={d_ff}", test_intermediate_expansion)
+
+    # ------------------------------------------------------------------ #
+    # Print results                                                        #
+    # ------------------------------------------------------------------ #
+    print("Results:")
+    passed = failed = skipped = 0
+    for status, name, detail in results:
+        print(f"  [{status}] {name}: {detail}")
+        if status == "PASS":
+            passed += 1
+        elif status == "FAIL":
+            failed += 1
+        else:
+            skipped += 1
+
+    print()
+    print(f"Summary: {passed} passed, {failed} failed, {skipped} skipped")
+
+    if failed:
+        raise SystemExit(1)
+
+
+if __name__ == "__main__":
+    main()

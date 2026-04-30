@@ -10,8 +10,9 @@ GENERAL_CONFIG = {
     "d_model": 64,
     "n_heads": 4,
     "max_seq_len": 64,
-    "dropout": 0.0,
+    "dropout": 0.1,
     "return_attn_weights": True,
+    "d_ff": 256
 }
 
 TOKENIZER_CONFIG = {
