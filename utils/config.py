@@ -9,6 +9,7 @@ GENERAL_CONFIG = {
     "vocab_size": 8192,
     "d_model": 64,
     "n_heads": 4,
+    "n_layers": 4,
     "max_seq_len": 64,
     "dropout": 0.1,
     "return_attn_weights": True,
