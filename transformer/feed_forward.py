@@ -34,6 +34,7 @@ class FeedForward(nn.Module):
 
         # Contract: d_ff -> d_model
         self.W_2 = nn.Linear(self.d_ff, self.d_model, bias=True)
+        self.W_2.is_residual_projection = True
 
     def forward(self, x):
         # x: (batch, seq_len, d_model)
