@@ -44,6 +44,23 @@ class GPT(nn.Module):
         self.lm_head = nn.Linear(self.d_model, self.vocab_size, bias=False)
         self.lm_head.weight = self.token_emb.token_embeddings.weight  #tie weights
 
+        self.apply(self._init_weights)
+
+    def _init_weights(self, module: nn.Module) -> None:
+        if isinstance(module, nn.Linear):
+            nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            if module.bias is not None:
+                nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            nn.init.normal_(module.weight, mean=0.0, std=0.02)
+
+        # Residual projections (W_o in attention, W_2 in FFN) are scaled down
+        # by 1/sqrt(2 * n_layers) to keep the residual stream variance stable
+        # as depth increases — each block adds to the stream, so without scaling
+        # the variance grows linearly with n_layers.
+        # I don't have a great way to identify these projections, so I'm using a custom attribute set in the TransformerBlock definition.
+        if hasattr(module, "is_residual_projection"):
+            module.weight.data *= (2 * self.n_layers) ** -0.5
 
     def forward(self, idx: torch.Tensor, targets: Optional[torch.Tensor] = None):
         batch, seq_len = idx.size()

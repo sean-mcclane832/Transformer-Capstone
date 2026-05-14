@@ -21,7 +21,8 @@ class MultiHeadAttention(nn.Module):
         self.projections = AttentionProjections(self.d_model)
         self.dropout = nn.Dropout(self.dropout_p)
 
-        self.W_o = nn.Linear(self.d_model, self.d_model, bias = False)
+        self.W_o = nn.Linear(self.d_model, self.d_model, bias=False)
+        self.W_o.is_residual_projection = True
 
     def forward(self, x, mask=None):
         batch, seq_len, _ = x.size()

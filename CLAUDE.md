@@ -60,31 +60,32 @@ Transformer-Capstone/
 │   ├── softmax.py              # numerically-stable softmax (custom)
 │   ├── mask.py                 # causal_mask() plain function
 │   └── multi_head.py           # MultiHeadAttention module
-├── transformer/                🔲 # planned — block-level modules
-│   ├── feed_forward.py         🔲 # FeedForward (FFN) module
-│   ├── layer_norm.py           🔲 # custom LayerNorm
-│   └── block.py                🔲 # TransformerBlock (Pre-LN)
-├── model/                      🔲 # planned — full-model assembly
-│   ├── gpt.py                  🔲 # GPT class (embeddings + blocks + LM head)
+├── transformer/
+│   ├── feed_forward.py         # FeedForward (FFN) module
+│   ├── layer_norm.py           # custom LayerNorm
+│   └── block.py                # TransformerBlock (Pre-LN)
+├── model/
+│   ├── gpt.py                  # GPT class (embeddings + blocks + LM head)
 │   └── generate.py             🔲 # sampling functions (greedy, temp, top-k, top-p)
 ├── data/
 │   ├── raw/
 │   │   ├── input.txt           # Shakespeare corpus
 │   │   └── greatgatsby.txt     # Project Gutenberg novel
-│   ├── prepare.py              🔲 # tokenize corpus → train.pt / val.pt
-│   ├── train.pt                🔲 # pre-tokenized training tokens
-│   ├── val.pt                  🔲 # pre-tokenized validation tokens
-│   └── dataset.py              🔲 # TokenDataset (sliding window)
+│   ├── processed/              # created by prepare.py at runtime
+│   │   ├── train.pt            # pre-tokenized training tokens
+│   │   └── val.pt              # pre-tokenized validation tokens
+│   ├── prepare.py              # tokenize corpus → processed/train.pt / val.pt
+│   └── dataset.py              # TokenDataset (sliding window) + load_dataset()
 ├── scripts/
 │   ├── train_tokenizer.py      # CLI: trains and saves BPE tokenizer
 │   ├── test_embedder.py        # Unit tests for embedding pipeline
 │   ├── test_projections.py     # Unit tests for Q/K/V projections
 │   ├── test_tokenizer.py       # Unit tests for tokenizer
 │   ├── test_multi_head.py      # Unit tests for MultiHeadAttention
-│   ├── test_feed_forward.py    🔲
-│   ├── test_layer_norm.py      🔲
-│   ├── test_block.py           🔲
-│   ├── test_model.py           🔲
+│   ├── test_ffn                # Unit tests for FeedForward
+│   ├── test_layer_norm.py      # Unit tests for LayerNorm
+│   ├── test_block.py           # Unit tests for TransformerBlock
+│   ├── test_gpt.py             # Unit tests for GPT model
 │   ├── test_dataset.py         🔲
 │   └── plot_curves.py          🔲 # training curve visualizations
 ├── text_processing/
@@ -120,17 +121,17 @@ GENERAL_CONFIG = {
     "vocab_size": 8192,
     "d_model": 64,
     "n_heads": 4,
+    "n_layers": 4,
     "max_seq_len": 64,
-    "dropout": 0.0,
+    "dropout": 0.1,
     "return_attn_weights": True,
+    "d_ff": 256,
 }
 ```
 
 Values to add as new components are built:
 
 ```python
-"n_layers": 4,        # number of stacked transformer blocks
-"d_ff": 256,          # FFN inner dimension; convention is 4 * d_model
 "batch_size": 64,     # used by DataLoader during training
 ```
 
@@ -185,6 +186,41 @@ Training runs will scale up significantly (see Target Scale below).
 - Owns the `nn.Dropout` instance for attention weights; passed into scaled-dot only during `self.training`
 - Verified with `scripts/test_multi_head.py`: output shape, weights shape, weights sum-to-one per row, causal mask zeroes upper triangle
 
+### `transformer/feed_forward.py` — `FeedForward`
+- Two linear layers with GELU activation: `W_1 (d_model → d_ff)` → GELU → Dropout → `W_2 (d_ff → d_model)`
+- `d_ff = 4 * d_model`, `bias=True` on both layers
+- `W_2.is_residual_projection = True` for GPT-2-style weight init scaling
+- Verified with `scripts/test_ffn`
+
+### `transformer/layer_norm.py` — `LayerNorm`
+- Hand-implemented: `(x - mean) / sqrt(var + eps) * gamma + beta` over `dim=-1`
+- `unbiased=False` variance, `eps=1e-5`, `gamma` init ones, `beta` init zeros
+- Verified with `scripts/test_layer_norm.py`
+
+### `transformer/block.py` — `TransformerBlock`
+- Pre-LN pattern: `x = x + dropout(attn(norm1(x)))` then `x = x + dropout(ffn(norm2(x)))`
+- Uses custom `LayerNorm`; residual dropout applied before each add
+- Handles `return_attn_weights` branching from `MultiHeadAttention`
+- Verified with `scripts/test_block.py`
+
+### `model/gpt.py` — `GPT`
+- Full pipeline: token embeddings + positional encoding → N transformer blocks → final LayerNorm → LM head
+- Weight tying: `self.lm_head.weight = self.token_emb.token_embeddings.weight`
+- GPT-2-style weight init via `_init_weights`: all Linear/Embedding weights `N(0, 0.02)`, biases zero; residual projections scaled by `1/sqrt(2 * n_layers)` via `is_residual_projection` flag
+- `forward(idx, targets=None)` returns `(logits, loss)` where loss is cross-entropy if targets provided
+
+### `data/prepare.py`
+- Reads all `.txt` files from `data/raw/` automatically — drop new corpus files there and re-run
+- Tokenizes the full combined corpus as one flat sequence (no BOS/EOS)
+- 90/10 contiguous train/val split, saves to `data/processed/train.pt` and `val.pt` as `torch.long`
+- Run once before training; do not run until corpus is finalized
+
+### `data/dataset.py` — `TokenDataset`
+- Sliding-window dataset over a flat token tensor
+- `__getitem__(i)` returns `(x, y)` where `x = tokens[i:i+seq_len]` and `y = tokens[i+1:i+seq_len+1]`
+- `__len__` = `len(tokens) - seq_len`
+- `load_dataset(split)` helper loads `data/processed/{split}.pt` and returns a `TokenDataset`
+
 ### `utils/seed.py` — `set_seed`
 - `set_seed(seed)` — sets `random`, `numpy`, `torch`, and `torch.cuda` seeds plus `PYTHONHASHSEED`; enables `cudnn.deterministic` and disables `cudnn.benchmark`
 
@@ -194,16 +230,11 @@ Training runs will scale up significantly (see Target Scale below).
 
 Implement these in order. Each step has a corresponding test script in `scripts/`.
 
-1. **FeedForward (`transformer/feed_forward.py`)** — two linear layers with GELU activation, inner dim `d_ff = 4 * d_model`, dropout after activation
-2. **Custom LayerNorm (`transformer/layer_norm.py`)** — hand-implemented `(x - mean) / sqrt(var + eps) * γ + β` over `dim=-1`; verified against `nn.LayerNorm`
-3. **TransformerBlock (`transformer/block.py`)** — Pre-LN: `x = x + dropout(attn(LN(x)))` then `x = x + dropout(ffn(LN(x)))`
-4. **GPT model (`model/gpt.py`)** — embeddings + N blocks + final LayerNorm + LM head; weight tying between input embedding and LM head; GPT-2-style weight init (`N(0, 0.02)`, residual projections scaled by `1/sqrt(2 * n_layers)`)
-5. **Data pipeline (`data/prepare.py`, `data/dataset.py`)** — pre-tokenize corpus to flat tensor, save to `train.pt` / `val.pt`; `TokenDataset` produces `(x, y)` pairs shifted by one position; 90/10 train/val split
-6. **Training loop (`train.py`)** — AdamW with parameter-group weight decay, linear warmup + cosine LR schedule, gradient clipping at `max_norm=1.0`, cross-entropy loss with reshape, validation every N steps, checkpointing, optional fp16 mixed precision
-7. **Sanity overfit test** — train on 5 fixed batches with `dropout=0.0`; loss must drop to <0.5 within ~1000 steps. Mandatory before any full run.
-8. **Generation (`model/generate.py`)** — greedy, temperature, top-k, top-p (nucleus); combined sampler under `torch.no_grad()` and `model.eval()`
-9. **CLI (`cli.py`)** — argparse: `--checkpoint`, `--prompt`, `--max-new-tokens`, `--temperature`, `--top-k`, `--top-p`
-10. **Visualization (`scripts/plot_curves.py`)** — loss/perplexity/LR curves; optional attention heatmaps
+1. **Training loop (`train.py`)** — AdamW with parameter-group weight decay, linear warmup + cosine LR schedule, gradient clipping at `max_norm=1.0`, cross-entropy loss with reshape, validation every N steps, checkpointing, optional fp16 mixed precision
+3. **Sanity overfit test** — train on 5 fixed batches with `dropout=0.0`; loss must drop to <0.5 within ~1000 steps. Mandatory before any full run.
+4. **Generation (`model/generate.py`)** — greedy, temperature, top-k, top-p (nucleus); combined sampler under `torch.no_grad()` and `model.eval()`
+5. **CLI (`cli.py`)** — argparse: `--checkpoint`, `--prompt`, `--max-new-tokens`, `--temperature`, `--top-k`, `--top-p`
+6. **Visualization (`scripts/plot_curves.py`)** — loss/perplexity/LR curves; optional attention heatmaps
 
 ---
 
@@ -236,7 +267,7 @@ Implement these in order. Each step has a corresponding test script in `scripts/
 ### Pre-LN transformer block
 - Pattern: `x = x + sublayer(LayerNorm(x))` for both attention and FFN
 - The residual stream is never normalized in place — gradients flow through residuals without passing through any LN
-- `ln1` and `ln2` are separate modules, never shared
+- `norm1` and `norm2` are separate modules, never shared
 - Residual dropout applied to sublayer output before the add
 
 ### GPT model assembly
@@ -327,11 +358,11 @@ GPT-2 Medium : d_model=1024, 16 heads, 24 layers, ~345M params
 | 4 | Custom softmax | ✅ Complete |
 | 5 | Scaled dot-product attention + causal mask | ✅ Complete |
 | 6 | Full MultiHeadAttention module | ✅ Complete |
-| 7 | FeedForward (FFN) module | 🔲 Next |
-| 8 | Custom LayerNorm | 🔲 |
-| 9 | Full transformer block (Pre-LN, unit-tested) | 🔲 |
-| 10 | GPT model assembly + weight init + tying | 🔲 |
-| 11 | Data pipeline (pre-tokenize, dataset, dataloader) | 🔲 |
+| 7 | FeedForward (FFN) module | ✅ Complete |
+| 8 | Custom LayerNorm | ✅ Complete |
+| 9 | Full transformer block (Pre-LN, unit-tested) | ✅ Complete |
+| 10 | GPT model assembly + weight init + tying | ✅ Complete |
+| 11 | Data pipeline (pre-tokenize, dataset, dataloader) | ✅ Complete |
 | 12 | Training loop (AdamW + warmup/cosine + grad clip) | 🔲 |
 | 13 | Sanity overfit test on tiny dataset | 🔲 |
 | 14 | Full training run with loss/perplexity logging | 🔲 |
@@ -368,6 +399,7 @@ For Milestone 18, the writeup should include:
 
 ## Notes for Claude
 
+- **Keep this file current.** After every new module, test script, or config change, update the relevant section of this file — repository structure, completed components, milestones, and config. Do not wait to be asked.
 - **Project knowledge does not auto-sync.** If searches return stale results after new code is merged, manually re-sync the GitHub connection in project settings.
 - Always check `utils/config.py` for current hyperparameter values before generating code that uses `d_model`, `vocab_size`, `max_seq_len`, `n_heads`, `n_layers`, `d_ff`, or `dropout`.
 - All new modules should import config values from `utils/config.py` rather than hardcoding.
