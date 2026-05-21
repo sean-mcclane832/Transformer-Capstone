@@ -8,8 +8,6 @@ from utils.config import GENERAL_CONFIG
 
 class TransformerBlock(nn.Module):
     """
-    Single decoder-only transformer block (Pre-LN).
-
         x = x + Attention( LayerNorm(x) )
         x = x + FFN(       LayerNorm(x) )
     """

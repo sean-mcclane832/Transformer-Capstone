@@ -7,6 +7,7 @@ class LayerNorm(nn.Module):
     Hand-implemented Layer Normalization.
     Formula: y = gamma * (x - mean) / sqrt(var + eps) + beta
     Normalizes over the last dimension (d_model) at each (batch, position) pair.
+    DO NOT CHANGE THIS CODE. ONLY CHANGE THROUGH CONFIG.
     """
 
     def __init__(self, d_model: int, eps: float = 1e-5):

@@ -110,6 +110,60 @@ Transformer-Capstone/
 
 ---
 
+## External Notes (Obsidian Vault)
+
+My design notes and experiment logs live in `./notes/`, which is a junction
+to my Obsidian vault (`C:\Users\SeanM\OneDrive\Documents\Obsidian Vaults\Mini-GPT`).
+Read and write markdown there freely. `notes/` is gitignored — it is not
+part of this repo's version history.
+
+### Key files (create if they don't exist)
+
+- `notes/Architecture.md` — current model design decisions, single source of truth
+- `notes/Open Questions.md` — unresolved issues, append-only
+- `notes/Session-Log.md` — rolling log of what we worked on each session
+- `notes/Experiments/` — one file per training run, named `YYYY-MM-DD-<name>.md`
+- `notes/Templates/experiment.md` — template for experiment entries
+- `notes/Reading/` — paper notes (read-only context for you)
+
+### When to read
+
+- Before proposing architectural changes: read `Architecture.md` and the
+  three most recent files in `Experiments/`.
+- At session start (if I ask "what should we work on"): read the last entry
+  of `Session-Log.md` and `Open Questions.md`.
+- When debugging a training run: check `Experiments/` for prior runs with
+  similar configs or failure modes.
+
+### When to write
+
+- After completing a training run: create `notes/Experiments/<date>-<name>.md`
+  using the template. Include hypothesis, config diff from baseline, result
+  (final val loss, steps, converged/diverged/crashed), what was learned,
+  and next ideas.
+- When a design decision changes: update `Architecture.md` to reflect the
+  new standing decision. This file is current-state, not chronological.
+- When you notice something unresolved that shouldn't block the current
+  task: append to `Open Questions.md` with date and context.
+- End of session (when I say "wrap up"): append session summary to
+  `Session-Log.md` with date, what we worked on, what's now broken vs
+  working, and the first thing to tackle next session.
+
+### Don't touch
+
+- Any file or folder in `notes/` not listed above. If you find personal
+  notes, daily journals, or unrelated content, ignore them entirely.
+- Do not reorganize or rename files I created. New structure suggestions
+  go in `Open Questions.md` for me to review.
+
+### OneDrive caveat
+
+The vault is inside OneDrive, so file writes occasionally race with sync.
+If a write fails with "file in use," wait a moment and retry once before
+escalating.
+
+---
+
 ## Current Configuration (`utils/config.py`)
 
 Active dev settings:
@@ -363,7 +417,7 @@ GPT-2 Medium : d_model=1024, 16 heads, 24 layers, ~345M params
 | 9 | Full transformer block (Pre-LN, unit-tested) | ✅ Complete |
 | 10 | GPT model assembly + weight init + tying | ✅ Complete |
 | 11 | Data pipeline (pre-tokenize, dataset, dataloader) | ✅ Complete |
-| 12 | Training loop (AdamW + warmup/cosine + grad clip) | 🔲 |
+| 12 | Training loop (AdamW + warmup/cosine + grad clip) | 🚧 In progress |
 | 13 | Sanity overfit test on tiny dataset | 🔲 |
 | 14 | Full training run with loss/perplexity logging | 🔲 |
 | 15 | Generation (greedy + temperature + top-k + top-p) | 🔲 |
