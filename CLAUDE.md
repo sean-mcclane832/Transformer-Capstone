@@ -66,7 +66,7 @@ Transformer-Capstone/
 │   └── block.py                # TransformerBlock (Pre-LN)
 ├── model/
 │   ├── gpt.py                  # GPT class (embeddings + blocks + LM head)
-│   └── generate.py             🔲 # sampling functions (greedy, temp, top-k, top-p)
+│   └── generate.py             # generate(), greedy_decode(), _apply_top_k/p helpers
 ├── data/
 │   ├── raw/
 │   │   ├── input.txt           # Shakespeare corpus
@@ -86,8 +86,10 @@ Transformer-Capstone/
 │   ├── test_layer_norm.py      # Unit tests for LayerNorm
 │   ├── test_block.py           # Unit tests for TransformerBlock
 │   ├── test_gpt.py             # Unit tests for GPT model
-│   ├── test_dataset.py         🔲
-│   └── plot_curves.py          🔲 # training curve visualizations
+│   ├── test_dataset.py         # Unit tests for TokenDataset + load_dataset
+│   ├── test_generate.py        # Unit tests for generate() / greedy_decode()
+│   ├── plot_curves.py          # training curve + attention heatmap visualizations
+│   └── cli.py                  # CLI: prompt → generated text (skeleton complete)
 ├── text_processing/
 │   ├── token_class.py          # ByteBPETokenizer class
 │   ├── embedding_classes.py    # InputEmbeddings, PositionalEncoding
@@ -100,10 +102,12 @@ Transformer-Capstone/
 │   ├── seed.py                 # set_seed() — deterministic seeding helper
 │   ├── helpers.py              # Placeholder (empty)
 │   └── io.py                   # Placeholder (empty)
-├── checkpoints/                🔲 # saved model checkpoints during training
-├── figures/                    🔲 # output PNGs of training curves, attention maps
-├── train.py                    🔲 # training loop entrypoint
-├── cli.py                      🔲 # CLI: prompt → generated text
+├── attention/
+│   └── kv_cache.py             🔲 # TurboQuantKVCache — deferred post-training optimization
+├── training/
+│   └── train.py                # training loop entrypoint (fully implemented)
+├── checkpoints/                # saved model checkpoints during training
+├── figures/                    # output PNGs of training curves, attention maps
 ├── CLAUDE.md                   # This file
 └── README.md
 ```
@@ -284,10 +288,10 @@ Training runs will scale up significantly (see Target Scale below).
 
 Implement these in order. Each step has a corresponding test script in `scripts/`.
 
-1. **Training loop (`train.py`)** — AdamW with parameter-group weight decay, linear warmup + cosine LR schedule, gradient clipping at `max_norm=1.0`, cross-entropy loss with reshape, validation every N steps, checkpointing, optional fp16 mixed precision
+1. **Training loop (`training/train.py`)** — AdamW with parameter-group weight decay, linear warmup + cosine LR schedule, gradient clipping at `max_norm=1.0`, cross-entropy loss with reshape, validation every N steps, checkpointing, optional fp16 mixed precision
 3. **Sanity overfit test** — train on 5 fixed batches with `dropout=0.0`; loss must drop to <0.5 within ~1000 steps. Mandatory before any full run.
 4. **Generation (`model/generate.py`)** — greedy, temperature, top-k, top-p (nucleus); combined sampler under `torch.no_grad()` and `model.eval()`
-5. **CLI (`cli.py`)** — argparse: `--checkpoint`, `--prompt`, `--max-new-tokens`, `--temperature`, `--top-k`, `--top-p`
+5. **CLI (`scripts/cli.py`)** — argparse: `--checkpoint`, `--prompt`, `--max-new-tokens`, `--temperature`, `--top-k`, `--top-p`
 6. **Visualization (`scripts/plot_curves.py`)** — loss/perplexity/LR curves; optional attention heatmaps
 
 ---
@@ -420,9 +424,9 @@ GPT-2 Medium : d_model=1024, 16 heads, 24 layers, ~345M params
 | 12 | Training loop (AdamW + warmup/cosine + grad clip) | 🚧 In progress |
 | 13 | Sanity overfit test on tiny dataset | 🔲 |
 | 14 | Full training run with loss/perplexity logging | 🔲 |
-| 15 | Generation (greedy + temperature + top-k + top-p) | 🔲 |
-| 16 | CLI interface | 🔲 |
-| 17 | Training curve visualizations | 🔲 |
+| 15 | Generation (greedy + temperature + top-k + top-p) | 🚧 Implemented, untested |
+| 16 | CLI interface | 🚧 Skeleton complete |
+| 17 | Training curve visualizations | 🚧 Skeleton complete |
 | 18 | Capstone documentation (math + architecture writeup) | 🔲 |
 | 19 | TurboQuant KV cache (deferred bonus) | 🔲 |
 

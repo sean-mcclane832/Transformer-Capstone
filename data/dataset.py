@@ -26,7 +26,7 @@ class TokenDataset(Dataset):
 
 
 def load_dataset(split: str = "train") -> TokenDataset:
-    path = ROOT / "data" / f"{split}.pt"
+    path = ROOT / "data" / "processed" / f"{split}.pt"
     if not path.exists():
         raise FileNotFoundError(f"{path} not found")
     tokens = torch.load(path)

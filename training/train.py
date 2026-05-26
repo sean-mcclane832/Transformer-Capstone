@@ -3,7 +3,7 @@ import math
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -17,12 +17,12 @@ from data.dataset import load_dataset
 from utils.config import GENERAL_CONFIG
 from utils.seed import set_seed
 
-
-# ── Training hyperparameters ──────────────────────────────────────────────────
+# hyperparameters and training config
 TRAIN_CONFIG = {
     "batch_size":   64,
     "max_lr":       3e-4,
-    "min_lr":       3e-5,       # max_lr / 10
+    #min_lr differs from gpt2 here, i think letting the model update during the final stages will allow for more fine tuning and better convergence, but feel free to experiment with this
+    "min_lr":       1e-5,
     "warmup_steps": 100,
     "max_steps":    5000,
     "weight_decay": 0.1,
@@ -37,8 +37,9 @@ TRAIN_CONFIG = {
 }
 
 
-# ── LR schedule: linear warmup → cosine decay ─────────────────────────────────
 def get_lr(step: int) -> float:
+    # learning increases linearly from 0  to max_lr during warmup, then uses cosine decay down to min_lr at max_steps.
+
     cfg = TRAIN_CONFIG
     if step < cfg["warmup_steps"]:
         return cfg["max_lr"] * (step + 1) / cfg["warmup_steps"]
@@ -48,10 +49,9 @@ def get_lr(step: int) -> float:
     return cfg["min_lr"] + 0.5 * (cfg["max_lr"] - cfg["min_lr"]) * (1.0 + math.cos(math.pi * progress))
 
 
-# ── Parameter groups: weight decay only on 2D+ tensors ────────────────────────
 def make_param_groups(model: GPT) -> list[dict]:
-    # Biases, LayerNorm gamma/beta, and embedding weights are 1D — skip decay.
-    # All weight matrices (Linear, Embedding lookup) are 2D+ — apply decay.
+    #biases, LayerNorm gamma/beta, and embedding weights are 1D — skip decay.
+    #all weight matrices (Linear, Embedding lookup) are 2D+ — apply decay.
     decay, no_decay = [], []
     for name, param in model.named_parameters():
         if not param.requires_grad:
@@ -66,7 +66,6 @@ def make_param_groups(model: GPT) -> list[dict]:
     ]
 
 
-# ── Validation pass ────────────────────────────────────────────────────────────
 @torch.no_grad()
 def evaluate(model: GPT, loader: DataLoader, device: torch.device) -> float:
     model.eval()
@@ -80,8 +79,7 @@ def evaluate(model: GPT, loader: DataLoader, device: torch.device) -> float:
     model.train()
     return total / count if count > 0 else float("inf")
 
-
-# ── Checkpoint helpers ─────────────────────────────────────────────────────────
+#checkpointing
 def save_checkpoint(model: GPT, optimizer: torch.optim.Optimizer,
                     step: int, val_loss: float,
                     ckpt_dir: Path, tag: str | None = None) -> Path:
@@ -98,7 +96,7 @@ def save_checkpoint(model: GPT, optimizer: torch.optim.Optimizer,
     }, path)
     return path
 
-
+#be careful altering this, it deletes old checkpoints permanently and if removed will cause disk space to fill up with old checkpoints rapidly
 def prune_checkpoints(ckpt_dir: Path, keep: int) -> None:
     # Delete oldest step_*.pt files beyond the keep limit; never deletes best.pt or final.pt
     ckpts = sorted(ckpt_dir.glob("step_*.pt"), key=lambda p: p.stat().st_mtime)
@@ -111,7 +109,7 @@ def train() -> None:
     set_seed()
     device = torch.device(GENERAL_CONFIG["device"])
 
-    # ── Data ──────────────────────────────────────────────────────────────────
+    #data
     train_ds = load_dataset("train")
     val_ds   = load_dataset("val")
 
@@ -124,7 +122,7 @@ def train() -> None:
         shuffle=False, drop_last=False,
     )
 
-    # ── Model ─────────────────────────────────────────────────────────────────
+    #model
     model = GPT().to(device)
 
     if TRAIN_CONFIG["overfit_test"]:
