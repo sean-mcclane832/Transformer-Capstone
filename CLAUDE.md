@@ -421,11 +421,11 @@ GPT-2 Medium : d_model=1024, 16 heads, 24 layers, ~345M params
 | 9 | Full transformer block (Pre-LN, unit-tested) | ✅ Complete |
 | 10 | GPT model assembly + weight init + tying | ✅ Complete |
 | 11 | Data pipeline (pre-tokenize, dataset, dataloader) | ✅ Complete |
-| 12 | Training loop (AdamW + warmup/cosine + grad clip) | 🚧 In progress |
-| 13 | Sanity overfit test on tiny dataset | 🔲 |
-| 14 | Full training run with loss/perplexity logging | 🔲 |
-| 15 | Generation (greedy + temperature + top-k + top-p) | 🚧 Implemented, untested |
-| 16 | CLI interface | 🚧 Skeleton complete |
+| 12 | Training loop (AdamW + warmup/cosine + grad clip) | ✅ Complete |
+| 13 | Sanity overfit test on tiny dataset | ✅ Complete |
+| 14 | Full training run with loss/perplexity logging | ✅ Complete (dev scale) |
+| 15 | Generation (greedy + temperature + top-k + top-p) | ✅ Complete |
+| 16 | CLI interface | ✅ Complete |
 | 17 | Training curve visualizations | 🚧 Skeleton complete |
 | 18 | Capstone documentation (math + architecture writeup) | 🔲 |
 | 19 | TurboQuant KV cache (deferred bonus) | 🔲 |

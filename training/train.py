@@ -19,20 +19,20 @@ from utils.seed import set_seed
 
 # hyperparameters and training config
 TRAIN_CONFIG = {
-    "batch_size":   64,
+    "batch_size":   16,
     "max_lr":       3e-4,
-    #min_lr differs from gpt2 here, i think letting the model update during the final stages will allow for more fine tuning and better convergence, but feel free to experiment with this
+    # min_lr kept higher than GPT-2 default (max_lr/10) to allow more fine-tuning in final steps
     "min_lr":       1e-5,
-    "warmup_steps": 100,
-    "max_steps":    5000,
+    "warmup_steps": 2000,
+    "max_steps":    50000,
     "weight_decay": 0.1,
     "betas":        (0.9, 0.95),
     "eps":          1e-8,
     "grad_clip":    1.0,
-    "val_every":    200,        # run validation every N steps
-    "ckpt_every":   500,        # save a step checkpoint every N steps
+    "val_every":    500,        # run validation every N steps
+    "ckpt_every":   2000,       # save a step checkpoint every N steps
     "ckpt_keep":    3,          # how many step checkpoints to keep on disk
-    "use_amp":      False,      # True once training on GPU
+    "use_amp":      True,       # fp16 mixed precision on GPU
     "overfit_test": False,      # True to run sanity overfit on 5 fixed batches
 }
 
@@ -144,9 +144,20 @@ def train() -> None:
 
     # ── Sanity overfit: 5 fixed batches cycled repeatedly ─────────────────────
     if TRAIN_CONFIG["overfit_test"]:
+        # Zero weight decay — decay fights memorization and will mask real training bugs
+        for group in optimizer.param_groups:
+            group["weight_decay"] = 0.0
+
+        # Flat LR for overfit — cosine decay fights memorization in real training (which we want)
+        # but defeats the purpose of a memorization diagnostic
+        overfit_lr = TRAIN_CONFIG["max_lr"]
+        for group in optimizer.param_groups:
+            group["lr"] = overfit_lr
+
         loader_iter     = iter(train_loader)
         overfit_batches = [next(loader_iter) for _ in range(5)]
-        print("=== OVERFIT TEST: 5 fixed batches, dropout=0, target loss < 0.5 ===")
+        print("=== OVERFIT TEST: 5 fixed batches, dropout=0, wd=0, flat LR, target loss < 0.5 ===")
+        model.train()
         for step in range(TRAIN_CONFIG["max_steps"]):
             x, y = overfit_batches[step % 5]
             x, y = x.to(device), y.to(device)
@@ -156,17 +167,13 @@ def train() -> None:
 
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), TRAIN_CONFIG["grad_clip"])
+            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), TRAIN_CONFIG["grad_clip"])
             scaler.step(optimizer)
             scaler.update()
             optimizer.zero_grad(set_to_none=True)
 
-            lr = get_lr(step)
-            for group in optimizer.param_groups:
-                group["lr"] = lr
-
             if step % 100 == 0 or step < 10:
-                print(f"  step {step:5d} | loss {loss.item():.4f} | ppl {math.exp(min(loss.item(), 20)):.2f}")
+                print(f"  step {step:5d} | loss {loss.item():.4f} | ppl {math.exp(min(loss.item(), 20)):.2f} | gnorm {grad_norm.item():.3f}")
         print(f"=== overfit test done. final loss: {loss.item():.4f} ===")
         return
 
