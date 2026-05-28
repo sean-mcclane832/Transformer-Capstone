@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git *)",
+      "Bash(Remove-Item \"C:\\\\Users\\\\SeanM\\\\Documents\\\\Transformer-Capstone\\\\train.py\")",
+      "Bash(Remove-Item \"C:\\\\Users\\\\SeanM\\\\Documents\\\\Transformer-Capstone\\\\cli.py\")",
+      "Bash(python training/train.py)"
+    ]
+  }
+}

@@ -66,7 +66,7 @@ Transformer-Capstone/
 │   └── block.py                # TransformerBlock (Pre-LN)
 ├── model/
 │   ├── gpt.py                  # GPT class (embeddings + blocks + LM head)
-│   └── generate.py             🔲 # sampling functions (greedy, temp, top-k, top-p)
+│   └── generate.py             # generate(), greedy_decode(), _apply_top_k/p helpers
 ├── data/
 │   ├── raw/
 │   │   ├── input.txt           # Shakespeare corpus
@@ -86,8 +86,10 @@ Transformer-Capstone/
 │   ├── test_layer_norm.py      # Unit tests for LayerNorm
 │   ├── test_block.py           # Unit tests for TransformerBlock
 │   ├── test_gpt.py             # Unit tests for GPT model
-│   ├── test_dataset.py         🔲
-│   └── plot_curves.py          🔲 # training curve visualizations
+│   ├── test_dataset.py         # Unit tests for TokenDataset + load_dataset
+│   ├── test_generate.py        # Unit tests for generate() / greedy_decode()
+│   ├── plot_curves.py          # training curve + attention heatmap visualizations
+│   └── cli.py                  # CLI: prompt → generated text (skeleton complete)
 ├── text_processing/
 │   ├── token_class.py          # ByteBPETokenizer class
 │   ├── embedding_classes.py    # InputEmbeddings, PositionalEncoding
@@ -100,13 +102,69 @@ Transformer-Capstone/
 │   ├── seed.py                 # set_seed() — deterministic seeding helper
 │   ├── helpers.py              # Placeholder (empty)
 │   └── io.py                   # Placeholder (empty)
-├── checkpoints/                🔲 # saved model checkpoints during training
-├── figures/                    🔲 # output PNGs of training curves, attention maps
-├── train.py                    🔲 # training loop entrypoint
-├── cli.py                      🔲 # CLI: prompt → generated text
+├── attention/
+│   └── kv_cache.py             🔲 # TurboQuantKVCache — deferred post-training optimization
+├── training/
+│   └── train.py                # training loop entrypoint (fully implemented)
+├── checkpoints/                # saved model checkpoints during training
+├── figures/                    # output PNGs of training curves, attention maps
 ├── CLAUDE.md                   # This file
 └── README.md
 ```
+
+---
+
+## External Notes (Obsidian Vault)
+
+My design notes and experiment logs live in `./notes/`, which is a junction
+to my Obsidian vault (`C:\Users\SeanM\OneDrive\Documents\Obsidian Vaults\Mini-GPT`).
+Read and write markdown there freely. `notes/` is gitignored — it is not
+part of this repo's version history.
+
+### Key files (create if they don't exist)
+
+- `notes/Architecture.md` — current model design decisions, single source of truth
+- `notes/Open Questions.md` — unresolved issues, append-only
+- `notes/Session-Log.md` — rolling log of what we worked on each session
+- `notes/Experiments/` — one file per training run, named `YYYY-MM-DD-<name>.md`
+- `notes/Templates/experiment.md` — template for experiment entries
+- `notes/Reading/` — paper notes (read-only context for you)
+
+### When to read
+
+- Before proposing architectural changes: read `Architecture.md` and the
+  three most recent files in `Experiments/`.
+- At session start (if I ask "what should we work on"): read the last entry
+  of `Session-Log.md` and `Open Questions.md`.
+- When debugging a training run: check `Experiments/` for prior runs with
+  similar configs or failure modes.
+
+### When to write
+
+- After completing a training run: create `notes/Experiments/<date>-<name>.md`
+  using the template. Include hypothesis, config diff from baseline, result
+  (final val loss, steps, converged/diverged/crashed), what was learned,
+  and next ideas.
+- When a design decision changes: update `Architecture.md` to reflect the
+  new standing decision. This file is current-state, not chronological.
+- When you notice something unresolved that shouldn't block the current
+  task: append to `Open Questions.md` with date and context.
+- End of session (when I say "wrap up"): append session summary to
+  `Session-Log.md` with date, what we worked on, what's now broken vs
+  working, and the first thing to tackle next session.
+
+### Don't touch
+
+- Any file or folder in `notes/` not listed above. If you find personal
+  notes, daily journals, or unrelated content, ignore them entirely.
+- Do not reorganize or rename files I created. New structure suggestions
+  go in `Open Questions.md` for me to review.
+
+### OneDrive caveat
+
+The vault is inside OneDrive, so file writes occasionally race with sync.
+If a write fails with "file in use," wait a moment and retry once before
+escalating.
 
 ---
 
@@ -230,10 +288,10 @@ Training runs will scale up significantly (see Target Scale below).
 
 Implement these in order. Each step has a corresponding test script in `scripts/`.
 
-1. **Training loop (`train.py`)** — AdamW with parameter-group weight decay, linear warmup + cosine LR schedule, gradient clipping at `max_norm=1.0`, cross-entropy loss with reshape, validation every N steps, checkpointing, optional fp16 mixed precision
+1. **Training loop (`training/train.py`)** — AdamW with parameter-group weight decay, linear warmup + cosine LR schedule, gradient clipping at `max_norm=1.0`, cross-entropy loss with reshape, validation every N steps, checkpointing, optional fp16 mixed precision
 3. **Sanity overfit test** — train on 5 fixed batches with `dropout=0.0`; loss must drop to <0.5 within ~1000 steps. Mandatory before any full run.
 4. **Generation (`model/generate.py`)** — greedy, temperature, top-k, top-p (nucleus); combined sampler under `torch.no_grad()` and `model.eval()`
-5. **CLI (`cli.py`)** — argparse: `--checkpoint`, `--prompt`, `--max-new-tokens`, `--temperature`, `--top-k`, `--top-p`
+5. **CLI (`scripts/cli.py`)** — argparse: `--checkpoint`, `--prompt`, `--max-new-tokens`, `--temperature`, `--top-k`, `--top-p`
 6. **Visualization (`scripts/plot_curves.py`)** — loss/perplexity/LR curves; optional attention heatmaps
 
 ---
@@ -363,12 +421,12 @@ GPT-2 Medium : d_model=1024, 16 heads, 24 layers, ~345M params
 | 9 | Full transformer block (Pre-LN, unit-tested) | ✅ Complete |
 | 10 | GPT model assembly + weight init + tying | ✅ Complete |
 | 11 | Data pipeline (pre-tokenize, dataset, dataloader) | ✅ Complete |
-| 12 | Training loop (AdamW + warmup/cosine + grad clip) | 🔲 |
-| 13 | Sanity overfit test on tiny dataset | 🔲 |
-| 14 | Full training run with loss/perplexity logging | 🔲 |
-| 15 | Generation (greedy + temperature + top-k + top-p) | 🔲 |
-| 16 | CLI interface | 🔲 |
-| 17 | Training curve visualizations | 🔲 |
+| 12 | Training loop (AdamW + warmup/cosine + grad clip) | ✅ Complete |
+| 13 | Sanity overfit test on tiny dataset | ✅ Complete |
+| 14 | Full training run with loss/perplexity logging | ✅ Complete (dev scale) |
+| 15 | Generation (greedy + temperature + top-k + top-p) | ✅ Complete |
+| 16 | CLI interface | ✅ Complete |
+| 17 | Training curve visualizations | 🚧 Skeleton complete |
 | 18 | Capstone documentation (math + architecture writeup) | 🔲 |
 | 19 | TurboQuant KV cache (deferred bonus) | 🔲 |
 

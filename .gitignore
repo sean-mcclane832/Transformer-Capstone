@@ -1,0 +1,15 @@
+# Symlinked Obsidian vault — not part of this repo
+notes/
+notes
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Trained checkpoint files (keep directory markers)
+checkpoints/*.pt
+
+# Pre-tokenized dataset tensors
+data/processed/*.pt
+data/*.pt

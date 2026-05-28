@@ -8,7 +8,7 @@ class FeedForward(nn.Module):
     Position-wise feed-forward network.
 
     The same MLP is applied independently at every sequence position. Attention
-    already handled cross-token mixing — this module's job is per-token nonlinear
+    already handled cross-token mixing. This module's job is per-token nonlinear
     processing. The inner dimension expands to d_ff (= 4 * d_model by convention),
     runs through a nonlinearity, then contracts back to d_model.
 
