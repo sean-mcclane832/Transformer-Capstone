@@ -426,7 +426,7 @@ GPT-2 Medium : d_model=1024, 16 heads, 24 layers, ~345M params
 | 14 | Full training run with loss/perplexity logging | ✅ Complete (dev scale) |
 | 15 | Generation (greedy + temperature + top-k + top-p) | ✅ Complete |
 | 16 | CLI interface | ✅ Complete |
-| 17 | Training curve visualizations | 🚧 Skeleton complete |
+| 17 | Training curve visualizations | ✅ Complete |
 | 18 | Capstone documentation (math + architecture writeup) | 🔲 |
 | 19 | TurboQuant KV cache (deferred bonus) | 🔲 |
 

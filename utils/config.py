@@ -5,15 +5,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 GENERAL_CONFIG = {
     "seed": 42,
-    "device": "cuda",
+    "device": "cpu",
     "vocab_size": 8192,
-    "d_model": 768,
-    "n_heads": 12,
-    "n_layers": 12,
-    "max_seq_len": 512,
+    "d_model": 64,
+    "n_heads": 4,
+    "n_layers": 4,
+    "max_seq_len": 64,
     "dropout": 0.1,
-    "return_attn_weights": False,   # True only for visualization — costs VRAM at this scale
-    "d_ff": 3072                    # 4 × d_model
+    "return_attn_weights": False,
+    "d_ff": 256
 }
 
 TOKENIZER_CONFIG = {

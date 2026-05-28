@@ -118,7 +118,7 @@ def main() -> None:
                         help="Prompt text for attention heatmap (requires --checkpoint)")
     args = parser.parse_args()
 
-    log = torch.load(args.log)
+    log = torch.load(args.log, weights_only=False)
 
     plot_loss(
         log["train_steps"], log["train_losses"],

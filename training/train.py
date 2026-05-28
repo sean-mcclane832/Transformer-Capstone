@@ -19,20 +19,20 @@ from utils.seed import set_seed
 
 # hyperparameters and training config
 TRAIN_CONFIG = {
-    "batch_size":   16,
+    "batch_size":   64,
     "max_lr":       3e-4,
     # min_lr kept higher than GPT-2 default (max_lr/10) to allow more fine-tuning in final steps
     "min_lr":       1e-5,
-    "warmup_steps": 2000,
-    "max_steps":    50000,
+    "warmup_steps": 100,
+    "max_steps":    5000,
     "weight_decay": 0.1,
     "betas":        (0.9, 0.95),
     "eps":          1e-8,
     "grad_clip":    1.0,
-    "val_every":    500,        # run validation every N steps
-    "ckpt_every":   2000,       # save a step checkpoint every N steps
+    "val_every":    200,        # run validation every N steps
+    "ckpt_every":   500,        # save a step checkpoint every N steps
     "ckpt_keep":    3,          # how many step checkpoints to keep on disk
-    "use_amp":      True,       # fp16 mixed precision on GPU
+    "use_amp":      False,      # True once training on GPU
     "overfit_test": False,      # True to run sanity overfit on 5 fixed batches
 }
 
@@ -179,6 +179,9 @@ def train() -> None:
 
     # ── Normal training ────────────────────────────────────────────────────────
     ckpt_dir  = ROOT / "checkpoints"
+    log_path  = ROOT / "figures" / "run_log.pt"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log = {"train_steps": [], "train_losses": [], "val_steps": [], "val_losses": [], "lrs": []}
     best_loss = float("inf")
     step      = 0
 
@@ -190,6 +193,11 @@ def train() -> None:
 
             t0 = time.perf_counter()
             x, y = x.to(device), y.to(device)
+
+            # Set LR before forward so warmup schedule is correct from step 0
+            lr = get_lr(step)
+            for group in optimizer.param_groups:
+                group["lr"] = lr
 
             # Forward + loss
             with torch.cuda.amp.autocast(enabled=TRAIN_CONFIG["use_amp"], dtype=torch.float16):
@@ -206,22 +214,25 @@ def train() -> None:
             scaler.update()
             optimizer.zero_grad(set_to_none=True)
 
-            # Apply LR schedule manually each step
-            lr = get_lr(step)
-            for group in optimizer.param_groups:
-                group["lr"] = lr
+            log["train_steps"].append(step)
+            log["train_losses"].append(loss.item())
+            log["lrs"].append(lr)
 
             dt_ms = (time.perf_counter() - t0) * 1000
-            print(
-                f"step {step:5d} | loss {loss.item():.4f} | "
-                f"ppl {math.exp(min(loss.item(), 20)):.2f} | "
-                f"lr {lr:.2e} | {dt_ms:.1f}ms"
-            )
+            if step % 10 == 0:
+                print(
+                    f"step {step:5d} | loss {loss.item():.4f} | "
+                    f"ppl {math.exp(min(loss.item(), 20)):.2f} | "
+                    f"lr {lr:.2e} | {dt_ms:.1f}ms"
+                )
 
-            # Validation
+            # Validation — also saves log incrementally so a crash doesn't lose the curve
             if step > 0 and step % TRAIN_CONFIG["val_every"] == 0:
                 val_loss = evaluate(model, val_loader, device)
                 print(f"  → val loss {val_loss:.4f} | val ppl {math.exp(min(val_loss, 20)):.2f}")
+                log["val_steps"].append(step)
+                log["val_losses"].append(val_loss)
+                torch.save(log, log_path)
                 if val_loss < best_loss:
                     best_loss = val_loss
                     save_checkpoint(model, optimizer, step, val_loss, ckpt_dir, tag="best")
@@ -234,10 +245,14 @@ def train() -> None:
 
             step += 1
 
-    # Final checkpoint after training completes
+    # Final checkpoint and log save
     val_loss = evaluate(model, val_loader, device)
+    log["val_steps"].append(step)
+    log["val_losses"].append(val_loss)
+    torch.save(log, log_path)
     save_checkpoint(model, optimizer, step, val_loss, ckpt_dir, tag="final")
     print(f"\nDone. Final val loss: {val_loss:.4f} | ppl: {math.exp(min(val_loss, 20)):.2f}")
+    print(f"Training log saved to {log_path}")
 
 
 if __name__ == "__main__":
