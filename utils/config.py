@@ -18,12 +18,15 @@ GENERAL_CONFIG = {
 
 TOKENIZER_CONFIG = {
     "input": [
+        str(ROOT / "data" / "raw" / "wikitext103.txt"),
+        str(ROOT / "data" / "raw" / "pg19.txt"),
+        str(ROOT / "data" / "raw" / "openwebtext.txt"),
         str(ROOT / "data" / "raw" / "input.txt"),
         str(ROOT / "data" / "raw" / "greatgatsby.txt"),
     ],
     "output": str(ROOT / "tokenizer" / "tokenizer.json"),
     "min_frequency": 4,
-    "max_chars": 0,
+    "max_chars": 100_000_000,  # 100M chars — representative sample, keeps pure-Python BPE tractable
     "add_special_tokens": True,
 }
 
