@@ -2,6 +2,7 @@ import sys
 import math
 import time
 from pathlib import Path
+from tqdm import tqdm
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -64,6 +65,23 @@ def make_param_groups(model: GPT) -> list[dict]:
         {"params": decay,    "weight_decay": TRAIN_CONFIG["weight_decay"]},
         {"params": no_decay, "weight_decay": 0.0},
     ]
+
+
+@torch.no_grad()
+def evaluate_by_position(model: GPT, loader: DataLoader, device: torch.device) -> list:
+    model.eval()
+    seq_len   = GENERAL_CONFIG["max_seq_len"]
+    pos_losses = torch.zeros(seq_len, device=device)
+    pos_counts = torch.zeros(seq_len, device=device)
+    for x, y in loader:
+        x, y = x.to(device), y.to(device)
+        logits, _ = model(x)
+        B, T, V   = logits.shape
+        per_token = F.cross_entropy(logits.view(B * T, V), y.view(B * T), reduction="none").view(B, T)
+        pos_losses += per_token.sum(0)
+        pos_counts += B
+    model.train()
+    return (pos_losses / pos_counts.clamp(min=1)).cpu().tolist()
 
 
 @torch.no_grad()
@@ -181,11 +199,18 @@ def train() -> None:
     ckpt_dir  = ROOT / "checkpoints"
     log_path  = ROOT / "figures" / "run_log.pt"
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    log = {"train_steps": [], "train_losses": [], "val_steps": [], "val_losses": [], "lrs": []}
-    best_loss = float("inf")
-    step      = 0
+    log = {
+        "train_steps": [], "train_losses": [], "lrs": [], "gnorms": [], "tokens_seen": [],
+        "val_steps": [], "val_losses": [],
+        "layer_gnorm_steps": [], "layer_gnorms": [],
+        "pos_losses": [],
+    }
+    best_loss    = float("inf")
+    step         = 0
+    tokens_seen  = 0
 
     model.train()
+    pbar = tqdm(total=TRAIN_CONFIG["max_steps"], desc="Training", unit="step", dynamic_ncols=True)
     while step < TRAIN_CONFIG["max_steps"]:
         for x, y in train_loader:
             if step >= TRAIN_CONFIG["max_steps"]:
@@ -208,35 +233,45 @@ def train() -> None:
 
             # Unscale before clip so clip operates on true gradient magnitudes
             scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), TRAIN_CONFIG["grad_clip"])
+
+            # Per-layer grad norms before clipping (sampled every 50 steps)
+            if step % 50 == 0:
+                layer_gnorms_now = []
+                for block in model.blocks:
+                    grads = [p.grad.detach() for p in block.parameters() if p.grad is not None]
+                    block_gnorm = torch.stack([g.norm() for g in grads]).norm().item() if grads else 0.0
+                    layer_gnorms_now.append(block_gnorm)
+                log["layer_gnorm_steps"].append(step)
+                log["layer_gnorms"].append(layer_gnorms_now)
+
+            gnorm = torch.nn.utils.clip_grad_norm_(model.parameters(), TRAIN_CONFIG["grad_clip"]).item()
 
             scaler.step(optimizer)
             scaler.update()
             optimizer.zero_grad(set_to_none=True)
 
+            tokens_seen += TRAIN_CONFIG["batch_size"] * GENERAL_CONFIG["max_seq_len"]
             log["train_steps"].append(step)
             log["train_losses"].append(loss.item())
             log["lrs"].append(lr)
+            log["gnorms"].append(gnorm)
+            log["tokens_seen"].append(tokens_seen)
 
             dt_ms = (time.perf_counter() - t0) * 1000
-            if step % 10 == 0:
-                print(
-                    f"step {step:5d} | loss {loss.item():.4f} | "
-                    f"ppl {math.exp(min(loss.item(), 20)):.2f} | "
-                    f"lr {lr:.2e} | {dt_ms:.1f}ms"
-                )
+            pbar.update(1)
+            pbar.set_postfix(loss=f"{loss.item():.4f}", ppl=f"{math.exp(min(loss.item(), 20)):.1f}", lr=f"{lr:.2e}", ms=f"{dt_ms:.0f}")
 
             # Validation — also saves log incrementally so a crash doesn't lose the curve
             if step > 0 and step % TRAIN_CONFIG["val_every"] == 0:
                 val_loss = evaluate(model, val_loader, device)
-                print(f"  → val loss {val_loss:.4f} | val ppl {math.exp(min(val_loss, 20)):.2f}")
+                tqdm.write(f"  step {step:5d} | val loss {val_loss:.4f} | val ppl {math.exp(min(val_loss, 20)):.2f}")
                 log["val_steps"].append(step)
                 log["val_losses"].append(val_loss)
                 torch.save(log, log_path)
                 if val_loss < best_loss:
                     best_loss = val_loss
                     save_checkpoint(model, optimizer, step, val_loss, ckpt_dir, tag="best")
-                    print(f"  → new best checkpoint saved ({val_loss:.4f})")
+                    tqdm.write(f"  → new best checkpoint saved ({val_loss:.4f})")
 
             # Periodic step checkpoint
             if step > 0 and step % TRAIN_CONFIG["ckpt_every"] == 0:
@@ -245,10 +280,13 @@ def train() -> None:
 
             step += 1
 
+    pbar.close()
+
     # Final checkpoint and log save
     val_loss = evaluate(model, val_loader, device)
     log["val_steps"].append(step)
     log["val_losses"].append(val_loss)
+    log["pos_losses"] = evaluate_by_position(model, val_loader, device)
     torch.save(log, log_path)
     save_checkpoint(model, optimizer, step, val_loss, ckpt_dir, tag="final")
     print(f"\nDone. Final val loss: {val_loss:.4f} | ppl: {math.exp(min(val_loss, 20)):.2f}")

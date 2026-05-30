@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 GENERAL_CONFIG = {
     "seed": 42,
     "device": "cpu",
-    "vocab_size": 8192,
+    "vocab_size": 32768,
     "d_model": 64,
     "n_heads": 4,
     "n_layers": 4,
@@ -26,7 +26,7 @@ TOKENIZER_CONFIG = {
     ],
     "output": str(ROOT / "tokenizer" / "tokenizer.json"),
     "min_frequency": 4,
-    "max_chars": 100_000_000,  # 100M chars — representative sample, keeps pure-Python BPE tractable
+    "max_chars": 5_000_000,  # 5M chars — keeps pure-Python BPE tractable while covering diverse corpus
     "add_special_tokens": True,
 }
 
