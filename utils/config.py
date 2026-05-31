@@ -1,6 +1,6 @@
 from pathlib import Path
 
-MODEL_NAME = "ADRIA"  # Attention-Driven Recursive Inference Architecture
+MODEL_NAME = "ADRIA"  # Attention-Driven Recursive Inference Architecture — the backronym is in the docs, the real reason isn't.
 
 ROOT = Path(__file__).resolve().parents[1]
 
