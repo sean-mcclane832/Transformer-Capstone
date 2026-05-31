@@ -7,6 +7,7 @@ Read it fully before generating any code, suggestions, or analysis.
 
 ## Project Identity
 
+**Model name:** ADRIA (Attention-Driven Recursive Inference Architecture)
 **Repository:** Transformer-Capstone
 **Project type:** Senior capstone — decoder-only GPT-style transformer built from scratch in PyTorch
 **Goal:** Implement the full language model pipeline from tokenizer through autoregressive generation, understanding every component at the architectural and mathematical level

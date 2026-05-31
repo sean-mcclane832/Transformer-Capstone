@@ -18,6 +18,12 @@ from utils.config import GENERAL_CONFIG
 
 class GPT(nn.Module):
     """
+    ADRIA — Attention-Driven Recursive Inference Architecture.
+
+    Decoder-only transformer trained via next-token prediction. Every component
+    (tokenizer, attention, FFN, LayerNorm, training loop) is hand-implemented
+    from scratch in PyTorch as a senior capstone project.
+
     Pipeline:
         token IDs (batch, seq_len)
           -> token embeddings + positional encoding

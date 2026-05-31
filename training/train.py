@@ -20,20 +20,19 @@ from utils.seed import set_seed
 
 # hyperparameters and training config
 TRAIN_CONFIG = {
-    "batch_size":   64,
+    "batch_size":   32,
     "max_lr":       3e-4,
-    # min_lr kept higher than GPT-2 default (max_lr/10) to allow more fine-tuning in final steps
-    "min_lr":       1e-5,
-    "warmup_steps": 100,
-    "max_steps":    5000,
+    "min_lr":       3e-5,       # max_lr / 10 — standard GPT-2 cosine schedule floor
+    "warmup_steps": 2000,
+    "max_steps":    100_000,
     "weight_decay": 0.1,
     "betas":        (0.9, 0.95),
     "eps":          1e-8,
     "grad_clip":    1.0,
-    "val_every":    200,        # run validation every N steps
-    "ckpt_every":   500,        # save a step checkpoint every N steps
+    "val_every":    1000,       # run validation every N steps
+    "ckpt_every":   5000,       # save a step checkpoint every N steps
     "ckpt_keep":    3,          # how many step checkpoints to keep on disk
-    "use_amp":      False,      # True once training on GPU
+    "use_amp":      True,       # fp16 mixed precision on GPU
     "overfit_test": False,      # True to run sanity overfit on 5 fixed batches
 }
 
