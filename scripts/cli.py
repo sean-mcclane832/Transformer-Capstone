@@ -1,5 +1,5 @@
 """
-cli.py — MiniGPT text generation interface
+cli.py — ADRIA text generation interface
 
 Usage:
     python scripts/cli.py --checkpoint checkpoints/best.pt --prompt "To be or not to be"
@@ -37,7 +37,7 @@ def load_tokenizer() -> ByteBPETokenizer:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate text with MiniGPT")
+    parser = argparse.ArgumentParser(description="Generate text with ADRIA")
     parser.add_argument("--checkpoint",     type=str,   required=True,
                         help="Path to a .pt checkpoint file")
     parser.add_argument("--prompt",         type=str,   required=True,
