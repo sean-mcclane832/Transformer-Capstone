@@ -6,6 +6,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import torch
+from tqdm import tqdm
 from text_processing.token_class import ByteBPETokenizer
 from utils.config import TOKENIZER_CONFIG
 
@@ -40,10 +41,11 @@ def main() -> None:
     CHUNK_SIZE = 10_000  # characters per chunk
     all_ids = []
     num_chunks = (len(corpus) + CHUNK_SIZE - 1) // CHUNK_SIZE
-    for i in range(0, len(corpus), CHUNK_SIZE):
-        chunk_ids = tok.encode(corpus[i:i + CHUNK_SIZE], add_bos=False, add_eos=False)
-        all_ids.extend(chunk_ids)
-        print(f"{i // CHUNK_SIZE + 1}/{num_chunks}")
+    with tqdm(total=num_chunks, desc="Tokenizing", unit="chunk") as pbar:
+        for i in range(0, len(corpus), CHUNK_SIZE):
+            chunk_ids = tok.encode(corpus[i:i + CHUNK_SIZE], add_bos=False, add_eos=False)
+            all_ids.extend(chunk_ids)
+            pbar.update(1)
 
     print(f"Total tokens: {len(all_ids):,}")
 

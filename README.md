@@ -1,8 +1,8 @@
-## Transformer Capstone (MiniGPT)
+# ADRIA — Attention-Driven Recursive Inference Architecture
 
 ![alt text](image.png)
 
-MiniGPT is a small scale decoder only transformer language model built from scratch.  
+ADRIA is a decoder-only GPT-style transformer language model built from scratch in PyTorch as a senior capstone project.  
 The goal is to understand how GPT style models work at an architectural and training level, not to achieve large scale performance.
 
 This project is a senior capstone focused on implementing the full language model pipeline, including tokenization, attention, training, and text generation.

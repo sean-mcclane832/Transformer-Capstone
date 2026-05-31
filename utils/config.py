@@ -1,29 +1,33 @@
 from pathlib import Path
 
+MODEL_NAME = "ADRIA"  # Attention-Driven Recursive Inference Architecture — the backronym is in the docs, the real reason isn't.
 
 ROOT = Path(__file__).resolve().parents[1]
 
 GENERAL_CONFIG = {
     "seed": 42,
     "device": "cuda",
-    "vocab_size": 8192,
+    "vocab_size": 32768,
     "d_model": 768,
     "n_heads": 12,
     "n_layers": 12,
     "max_seq_len": 512,
     "dropout": 0.1,
-    "return_attn_weights": False,   # True only for visualization — costs VRAM at this scale
-    "d_ff": 3072                    # 4 × d_model
+    "return_attn_weights": False,
+    "d_ff": 3072,           # 4 × d_model
 }
 
 TOKENIZER_CONFIG = {
     "input": [
+        str(ROOT / "data" / "raw" / "wikitext103.txt"),
+        str(ROOT / "data" / "raw" / "pg19.txt"),
+        str(ROOT / "data" / "raw" / "openwebtext.txt"),
         str(ROOT / "data" / "raw" / "input.txt"),
         str(ROOT / "data" / "raw" / "greatgatsby.txt"),
     ],
     "output": str(ROOT / "tokenizer" / "tokenizer.json"),
     "min_frequency": 4,
-    "max_chars": 0,
+    "max_chars": 5_000_000,  # 5M chars — keeps pure-Python BPE tractable while covering diverse corpus
     "add_special_tokens": True,
 }
 

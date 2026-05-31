@@ -7,6 +7,7 @@ Read it fully before generating any code, suggestions, or analysis.
 
 ## Project Identity
 
+**Model name:** ADRIA (Attention-Driven Recursive Inference Architecture)
 **Repository:** Transformer-Capstone
 **Project type:** Senior capstone — decoder-only GPT-style transformer built from scratch in PyTorch
 **Goal:** Implement the full language model pipeline from tokenizer through autoregressive generation, understanding every component at the architectural and mathematical level
@@ -426,7 +427,7 @@ GPT-2 Medium : d_model=1024, 16 heads, 24 layers, ~345M params
 | 14 | Full training run with loss/perplexity logging | ✅ Complete (dev scale) |
 | 15 | Generation (greedy + temperature + top-k + top-p) | ✅ Complete |
 | 16 | CLI interface | ✅ Complete |
-| 17 | Training curve visualizations | 🚧 Skeleton complete |
+| 17 | Training curve visualizations | ✅ Complete |
 | 18 | Capstone documentation (math + architecture writeup) | 🔲 |
 | 19 | TurboQuant KV cache (deferred bonus) | 🔲 |
 

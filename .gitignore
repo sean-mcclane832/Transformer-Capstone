@@ -13,3 +13,6 @@ checkpoints/*.pt
 # Pre-tokenized dataset tensors
 data/processed/*.pt
 data/*.pt
+
+# Raw corpus text files (large; run data/build_corpus.py to regenerate)
+data/raw/*.txt
