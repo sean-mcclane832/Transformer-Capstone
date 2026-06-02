@@ -20,22 +20,6 @@ def generate(
     top_p: float | None = None,
     eos_token_id: int | None = None,
 ) -> torch.Tensor:
-    """
-    Autoregressively sample tokens from a prompt.
-
-    Args:
-        model:          trained GPT (set to eval mode internally)
-        idx:            (1, seq_len) integer prompt token IDs
-        max_new_tokens: maximum number of tokens to generate
-        temperature:    logit scaling before sampling — < 1 sharpens, > 1 flattens
-        top_k:          if set, zero out all logits outside the top-k before sampling
-        top_p:          if set, keep the smallest nucleus of tokens whose cumulative
-                        probability >= p (nucleus / top-p sampling)
-        eos_token_id:   if set, stop early when this token is sampled
-
-    Returns:
-        (1, seq_len + n_generated) token IDs including the prompt
-    """
     model.eval()
     max_seq_len = GENERAL_CONFIG["max_seq_len"]
 
@@ -96,8 +80,41 @@ def _apply_top_p(logits: torch.Tensor, p: float) -> torch.Tensor:
     return logits
 
 
+def generate_stream(
+    model: GPT,
+    idx: torch.Tensor,
+    max_new_tokens: int,
+    temperature: float = 1.0,
+    top_k: int | None = None,
+    top_p: float | None = None,
+    eos_token_id: int | None = None,
+):
+    # streaming version of generate() — yields one token ID at a time instead of returning the full sequence
+    model.eval()
+    max_seq_len = GENERAL_CONFIG["max_seq_len"]
+
+    for _ in range(max_new_tokens):
+        idx_cond = idx if idx.size(1) <= max_seq_len else idx[:, -max_seq_len:]
+        logits, _ = model(idx_cond)
+        logits = logits[:, -1, :]
+
+        if temperature != 1.0:
+            logits = logits / temperature
+        if top_k is not None:
+            logits = _apply_top_k(logits, top_k)
+        if top_p is not None:
+            logits = _apply_top_p(logits, top_p)
+
+        probs = F.softmax(logits, dim=-1)
+        next_token = torch.multinomial(probs, num_samples=1)
+        idx = torch.cat([idx, next_token], dim=1)
+        yield next_token.item()
+
+        if eos_token_id is not None and next_token.item() == eos_token_id:
+            break
+
+
 def greedy_decode(model: GPT, idx: torch.Tensor, max_new_tokens: int) -> torch.Tensor:
-    """Deterministic greedy decoding — always picks the highest-probability token."""
     model.eval()
     max_seq_len = GENERAL_CONFIG["max_seq_len"]
 

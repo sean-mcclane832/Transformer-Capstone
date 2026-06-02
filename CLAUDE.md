@@ -99,9 +99,9 @@ Transformer-Capstone/
 ├── tokenizer/
 │   └── tokenizer.json          # Saved trained BPE tokenizer
 ├── utils/
-│   ├── config.py               # GENERAL_CONFIG, TOKENIZER_CONFIG, SCRIPT_CONFIG
+│   ├── config.py               # MODEL_TIERS, ACTIVE_TIER, GENERAL_CONFIG, TOKENIZER_CONFIG, SCRIPT_CONFIG
 │   ├── seed.py                 # set_seed() — deterministic seeding helper
-│   ├── helpers.py              # Placeholder (empty)
+│   ├── helpers.py              # checkpoint_name() — checkpoint filename builder
 │   └── io.py                   # Placeholder (empty)
 ├── attention/
 │   └── kv_cache.py             🔲 # TurboQuantKVCache — deferred post-training optimization
@@ -169,33 +169,37 @@ escalating.
 
 ---
 
-## Current Configuration (`utils/config.py`)
+## Configuration (`utils/config.py`)
 
-Active dev settings:
-
-```python
-GENERAL_CONFIG = {
-    "seed": 42,
-    "device": "cpu",
-    "vocab_size": 8192,
-    "d_model": 64,
-    "n_heads": 4,
-    "n_layers": 4,
-    "max_seq_len": 64,
-    "dropout": 0.1,
-    "return_attn_weights": True,
-    "d_ff": 256,
-}
-```
-
-Values to add as new components are built:
+`GENERAL_CONFIG` is built by merging `_BASE_CONFIG` with the active size tier. Switch tiers by changing `ACTIVE_TIER`.
 
 ```python
-"batch_size": 64,     # used by DataLoader during training
+ACTIVE_TIER = "small"   # change to "nano" for dev/overfit work
 ```
 
-These small values are intentional for fast iteration during development.
-Training runs will scale up significantly (see Target Scale below).
+### Size tiers (`MODEL_TIERS`)
+
+| Key | `nano` (dev/overfit) | `small` (first run) |
+|---|---|---|
+| `d_model` | 64 | 768 |
+| `n_heads` | 4 | 12 |
+| `n_layers` | 4 | 12 |
+| `d_ff` | 256 | 3072 |
+| `max_seq_len` | 64 | 512 |
+
+Shared across all tiers: `seed=42`, `device="cuda"`, `vocab_size=32768`, `dropout=0.1`, `return_attn_weights=False`.
+
+`vocab_size` never changes between tiers — it is tied to the trained tokenizer.
+
+### Checkpoint naming (`utils/helpers.py` — `checkpoint_name`)
+
+```python
+checkpoint_name(tier, step, val_loss, arch="base")
+# → "adria-small-base-step005000-2.41.pt"
+# → "adria-small-rope-step005000-2.35.pt"
+```
+
+`tier` matches a `MODEL_TIERS` key. `arch` is a short kebab-case tag for the architecture variant (`base`, `rope`, `gqa`, `rope-gqa`). Step is zero-padded to 6 digits for lexicographic sort. Not yet wired into the training loop.
 
 ---
 

@@ -1,5 +1,5 @@
 """
-plot_curves.py — Training curve visualizations for MiniGPT
+plot_curves.py — Training curve visualizations for ADRIA
 
 Reads a checkpoint and/or a log file, then produces:
   - Loss curve (train + val)
@@ -101,7 +101,7 @@ def plot_grad_norm(steps, gnorms, out_path: Path) -> None:
 def plot_bpc(val_steps, val_losses, out_path: Path) -> None:
     bpt = [l / math.log(2) for l in val_losses]
     fig, ax = plt.subplots(figsize=(8, 4))
-    ax.plot(val_steps, bpt, linewidth=1.5, label="MiniGPT (val)")
+    ax.plot(val_steps, bpt, linewidth=1.5, label="ADRIA (val)")
     # GPT-2 reference lines on WikiText-103 (bits per token, 50K vocab BPE)
     ax.axhline(math.log2(29.6), color="gray",  linestyle="--", linewidth=1, label="GPT-2 Small  (~29.6 ppl)")
     ax.axhline(math.log2(22.8), color="silver", linestyle="--", linewidth=1, label="GPT-2 Medium (~22.8 ppl)")
@@ -205,7 +205,7 @@ def plot_attention_heatmaps(weights: torch.Tensor, tokens: list[str], out_path: 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Plot MiniGPT training curves")
+    parser = argparse.ArgumentParser(description="Plot ADRIA training curves")
     parser.add_argument("--log",        type=str, required=True,
                         help="Path to training log .pt file")
     parser.add_argument("--checkpoint", type=str, default=None,
