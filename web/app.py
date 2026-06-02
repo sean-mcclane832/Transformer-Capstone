@@ -14,6 +14,7 @@ from model.gpt import GPT
 from model.generate import generate_stream
 from text_processing.token_class import ByteBPETokenizer
 from utils.config import GENERAL_CONFIG, TOKENIZER_CONFIG
+import utils.config as _cfg
 
 app = Flask(__name__)
 
@@ -24,9 +25,17 @@ _device: torch.device = None
 
 
 def _load_model(checkpoint_path: Path, device: torch.device) -> GPT:
-    m = GPT().to(device)
     ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
-    # Support both a raw state_dict and a wrapped training checkpoint
+    # temporarily patch GENERAL_CONFIG so GPT() builds the right architecture
+    # for this checkpoint regardless of what ACTIVE_TIER is currently set to,
+    # then restore it so nothing else in the process sees a different config
+    if "gen_config" in ckpt:
+        original = dict(_cfg.GENERAL_CONFIG)
+        _cfg.GENERAL_CONFIG.update(ckpt["gen_config"])
+    m = GPT().to(device)
+    if "gen_config" in ckpt:
+        _cfg.GENERAL_CONFIG.clear()
+        _cfg.GENERAL_CONFIG.update(original)
     state = ckpt.get("model", ckpt)
     m.load_state_dict(state)
     m.eval()
