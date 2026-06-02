@@ -180,6 +180,38 @@ def main() -> None:
     add_result(results, "use_rope=True produces different output than use_rope=False", test_rope_changes_output)
 
     # ------------------------------------------------------------------ #
+    # 8. Sinusoidal PE is skipped when use_rope=True                       #
+    # ------------------------------------------------------------------ #
+    def test_sinusoidal_skipped() -> str:
+        from text_processing.embedding_classes import PositionalEncoding
+        d_model = 64
+        sl      = 16
+        pe = PositionalEncoding(d_model=d_model, seq_len=sl, dropout=0.0).eval()
+        x  = torch.randn(1, sl, d_model)
+
+        original = GENERAL_CONFIG.get("use_rope", False)
+
+        GENERAL_CONFIG["use_rope"] = False
+        with torch.no_grad():
+            out_base = pe(x)
+
+        GENERAL_CONFIG["use_rope"] = True
+        with torch.no_grad():
+            out_rope = pe(x)
+
+        GENERAL_CONFIG["use_rope"] = original
+
+        # with use_rope=True, PE should be identity (no signal added), so output == input
+        if not torch.allclose(out_rope, x, atol=1e-6):
+            raise AssertionError("PE was not skipped — output differs from input when use_rope=True")
+        # and base should differ from input (PE was added)
+        if torch.allclose(out_base, x, atol=1e-6):
+            raise AssertionError("PE had no effect in base mode — sinusoidal signal may be zero")
+        return "PE skipped when use_rope=True, applied when use_rope=False"
+
+    add_result(results, "sinusoidal PE is skipped when use_rope=True", test_sinusoidal_skipped)
+
+    # ------------------------------------------------------------------ #
     # Print results                                                        #
     # ------------------------------------------------------------------ #
     print("Results:")
