@@ -4,6 +4,7 @@ import torch.nn as nn
 from attention.projections import AttentionProjections
 from attention.scaled_dot import scaled_dot_product_attention
 from attention.mask import causal_mask
+from attention.rope import RotaryEmbedding, apply_rotary
 from utils.config import GENERAL_CONFIG
 
 class MultiHeadAttention(nn.Module):
@@ -24,14 +25,23 @@ class MultiHeadAttention(nn.Module):
         self.W_o = nn.Linear(self.d_model, self.d_model, bias=False)
         self.W_o.is_residual_projection = True
 
+        self.use_rope = GENERAL_CONFIG.get("use_rope", False)
+        if self.use_rope:
+            self.rope = RotaryEmbedding(self.d_k, GENERAL_CONFIG["max_seq_len"])
+
     def forward(self, x, mask=None):
         batch, seq_len, _ = x.size()
         Q, K, V = self.projections(x)
 
         # (batch, n_heads, seq_len, d_k)
         Q = Q.view(batch, seq_len, self.n_heads, self.d_k).transpose(1, 2)
-        K = K.view(batch, seq_len, self.n_heads, self.d_k).transpose(1, 2) 
-        V = V.view(batch, seq_len, self.n_heads, self.d_k).transpose(1, 2)  
+        K = K.view(batch, seq_len, self.n_heads, self.d_k).transpose(1, 2)
+        V = V.view(batch, seq_len, self.n_heads, self.d_k).transpose(1, 2)
+
+        if self.use_rope:
+            cos, sin = self.rope(seq_len)
+            Q = apply_rotary(Q, cos, sin)
+            K = apply_rotary(K, cos, sin)
 
         if mask is None:
             mask = causal_mask(seq_len).unsqueeze(0).unsqueeze(0).to(x.device)

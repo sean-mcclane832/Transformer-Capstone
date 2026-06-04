@@ -52,6 +52,7 @@ class PositionalEncoding(nn.Module):
             raise ValueError(
                 f"Input sequence length {seq_len} exceeds positional encoding length {self.seq_len}"
             )
-
-        x = x + self.pe[:, :seq_len].requires_grad_(False)
+        # skip sinusoidal signal when RoPE is active — position is encoded in attention instead
+        if not GENERAL_CONFIG.get("use_rope", False):
+            x = x + self.pe[:, :seq_len].requires_grad_(False)
         return self.dropout(x)
