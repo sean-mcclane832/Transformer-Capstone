@@ -15,7 +15,8 @@ from torch.utils.data import DataLoader
 
 from model.gpt import GPT
 from data.dataset import load_dataset
-from utils.config import GENERAL_CONFIG
+from utils.config import GENERAL_CONFIG, ACTIVE_TIER
+from utils.helpers import checkpoint_name
 from utils.seed import set_seed
 
 # hyperparameters and training config
@@ -101,8 +102,11 @@ def save_checkpoint(model: GPT, optimizer: torch.optim.Optimizer,
                     step: int, val_loss: float,
                     ckpt_dir: Path, tag: str | None = None) -> Path:
     ckpt_dir.mkdir(parents=True, exist_ok=True)
-    name = tag if tag else f"step_{step:06d}"
-    path = ckpt_dir / f"{name}.pt"
+    if tag:
+        path = ckpt_dir / f"{tag}.pt"
+    else:
+        arch = "rope" if GENERAL_CONFIG.get("use_rope") else "base"
+        path = ckpt_dir / checkpoint_name(ACTIVE_TIER, step, val_loss, arch=arch)
     torch.save({
         "step":         step,
         "val_loss":     val_loss,
@@ -116,7 +120,7 @@ def save_checkpoint(model: GPT, optimizer: torch.optim.Optimizer,
 #be careful altering this, it deletes old checkpoints permanently and if removed will cause disk space to fill up with old checkpoints rapidly
 def prune_checkpoints(ckpt_dir: Path, keep: int) -> None:
     # Delete oldest step_*.pt files beyond the keep limit; never deletes best.pt or final.pt
-    ckpts = sorted(ckpt_dir.glob("step_*.pt"), key=lambda p: p.stat().st_mtime)
+    ckpts = sorted(ckpt_dir.glob("adria-*-step*.pt"), key=lambda p: p.stat().st_mtime)
     for old in ckpts[:-keep]:
         old.unlink()
 
