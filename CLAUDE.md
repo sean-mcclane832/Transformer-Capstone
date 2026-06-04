@@ -60,22 +60,27 @@ Transformer-Capstone/
 │   ├── scaled_dot.py           # scaled_dot_product_attention (plain function)
 │   ├── softmax.py              # numerically-stable softmax (custom)
 │   ├── mask.py                 # causal_mask() plain function
-│   └── multi_head.py           # MultiHeadAttention module
+│   ├── multi_head.py           # MultiHeadAttention module (RoPE-aware)
+│   ├── rope.py                 # RotaryEmbedding, apply_rotary, _rotate_half
+│   └── kv_cache.py             🔲 # TurboQuantKVCache — deferred post-training optimization
 ├── transformer/
 │   ├── feed_forward.py         # FeedForward (FFN) module
 │   ├── layer_norm.py           # custom LayerNorm
 │   └── block.py                # TransformerBlock (Pre-LN)
 ├── model/
 │   ├── gpt.py                  # GPT class (embeddings + blocks + LM head)
-│   └── generate.py             # generate(), greedy_decode(), _apply_top_k/p helpers
+│   └── generate.py             # generate(), generate_stream(), greedy_decode(), _apply_top_k/p helpers
 ├── data/
 │   ├── raw/
 │   │   ├── input.txt           # Shakespeare corpus
-│   │   └── greatgatsby.txt     # Project Gutenberg novel
+│   │   ├── greatgatsby.txt     # Project Gutenberg novel
+│   │   ├── wikitext103.txt     # WikiText-103
+│   │   ├── pg19.txt            # Project Gutenberg 19th-century books
+│   │   └── openwebtext.txt     # OpenWebText
 │   ├── processed/              # created by prepare.py at runtime
 │   │   ├── train.pt            # pre-tokenized training tokens
 │   │   └── val.pt              # pre-tokenized validation tokens
-│   ├── prepare.py              # tokenize corpus → processed/train.pt / val.pt
+│   ├── prepare.py              # tokenize corpus → processed/train.pt / val.pt (resume-checkpointed)
 │   └── dataset.py              # TokenDataset (sliding window) + load_dataset()
 ├── scripts/
 │   ├── train_tokenizer.py      # CLI: trains and saves BPE tokenizer
@@ -89,11 +94,16 @@ Transformer-Capstone/
 │   ├── test_gpt.py             # Unit tests for GPT model
 │   ├── test_dataset.py         # Unit tests for TokenDataset + load_dataset
 │   ├── test_generate.py        # Unit tests for generate() / greedy_decode()
-│   ├── plot_curves.py          # training curve + attention heatmap visualizations
-│   └── cli.py                  # CLI: prompt → generated text (skeleton complete)
+│   ├── test_rope.py            # Unit tests for RoPE (8 tests)
+│   ├── plot_curves.py          # training curve + attention heatmap visualizations (fully implemented)
+│   └── cli.py                  # CLI: prompt → generated text
+├── web/
+│   ├── app.py                  # Flask backend — SSE streaming generation endpoint
+│   ├── static/style.css        # dark theme stylesheet
+│   └── templates/index.html    # single-page streaming UI
 ├── text_processing/
 │   ├── token_class.py          # ByteBPETokenizer class
-│   ├── embedding_classes.py    # InputEmbeddings, PositionalEncoding
+│   ├── embedding_classes.py    # InputEmbeddings, PositionalEncoding (RoPE-aware)
 │   ├── text_processor.py       # TextEmbedder pipeline (tokenize → embed)
 │   └── utf-8.py                # Early scratch/reference BPE demo (not used in pipeline)
 ├── tokenizer/
@@ -103,8 +113,6 @@ Transformer-Capstone/
 │   ├── seed.py                 # set_seed() — deterministic seeding helper
 │   ├── helpers.py              # checkpoint_name() — checkpoint filename builder
 │   └── io.py                   # Placeholder (empty)
-├── attention/
-│   └── kv_cache.py             🔲 # TurboQuantKVCache — deferred post-training optimization
 ├── training/
 │   └── train.py                # training loop entrypoint (fully implemented)
 ├── checkpoints/                # saved model checkpoints during training
@@ -187,7 +195,7 @@ ACTIVE_TIER = "small"   # change to "nano" for dev/overfit work
 | `d_ff` | 256 | 3072 |
 | `max_seq_len` | 64 | 512 |
 
-Shared across all tiers: `seed=42`, `device="cuda"`, `vocab_size=32768`, `dropout=0.1`, `return_attn_weights=False`.
+Shared across all tiers: `seed=42`, `device="cuda"`, `vocab_size=32768`, `dropout=0.1`, `return_attn_weights=False`, `use_rope=False`.
 
 `vocab_size` never changes between tiers — it is tied to the trained tokenizer.
 
@@ -199,15 +207,15 @@ checkpoint_name(tier, step, val_loss, arch="base")
 # → "adria-small-rope-step005000-2.35.pt"
 ```
 
-`tier` matches a `MODEL_TIERS` key. `arch` is a short kebab-case tag for the architecture variant (`base`, `rope`, `gqa`, `rope-gqa`). Step is zero-padded to 6 digits for lexicographic sort. Not yet wired into the training loop.
+`tier` matches a `MODEL_TIERS` key. `arch` is a short kebab-case tag for the architecture variant (`base`, `rope`, `gqa`, `rope-gqa`). Step is zero-padded to 6 digits for lexicographic sort. `arch` is derived automatically in the training loop from `GENERAL_CONFIG["use_rope"]`. `best.pt` and `final.pt` are special singletons and do not use this scheme. `prune_checkpoints` globs `adria-*-step*.pt` to avoid deleting them.
 
 ---
 
 ## Completed Components
 
 ### `text_processing/token_class.py` — `ByteBPETokenizer`
-- Byte-level BPE tokenizer trained on Shakespeare + Great Gatsby
-- `vocab_size = 8192`
+- Byte-level BPE tokenizer trained on WikiText-103, PG-19, OpenWebText, Shakespeare, Great Gatsby
+- `vocab_size = 32768`
 - Supports `<bos>` and `<eos>` special tokens
 - `.encode(text, add_bos, add_eos)` → list of token IDs
 - `.decode(ids)` → string
@@ -215,7 +223,7 @@ checkpoint_name(tier, step, val_loss, arch="base")
 
 ### `text_processing/embedding_classes.py`
 - `InputEmbeddings(d_model, vocab_size)` — learned `nn.Embedding` lookup, scaled by `sqrt(d_model)` per the original paper
-- `PositionalEncoding(d_model, seq_len, dropout)` — sinusoidal encoding stored as a non-learnable buffer via `register_buffer`; raises `ValueError` if input exceeds `seq_len`
+- `PositionalEncoding(d_model, seq_len, dropout)` — sinusoidal encoding stored as a non-learnable buffer via `register_buffer`; raises `ValueError` if input exceeds `seq_len`; **skips additive PE signal when `GENERAL_CONFIG["use_rope"]` is True** (dropout still applies — position is handled in attention instead)
 
 ### `text_processing/text_processor.py` — `TextEmbedder`
 - Combines tokenizer + embeddings + positional encoding into a single pipeline
@@ -241,12 +249,20 @@ checkpoint_name(tier, step, val_loss, arch="base")
 - Plain function: `causal_mask(seq_len)` → lower-triangular `(seq_len, seq_len)` tensor of ones
 - No learnable parameters; shape must be broadcast-compatible with `(batch, n_heads, seq_len, seq_len)`
 
+### `attention/rope.py` — `RotaryEmbedding`, `apply_rotary`, `_rotate_half`
+- `RotaryEmbedding(d_k, max_seq_len)` — precomputes cos/sin tables as buffers; `forward(seq_len)` returns `(cos, sin)` slices
+- `apply_rotary(x, cos, sin)` — applies rotation to a `(batch, n_heads, seq_len, d_k)` tensor; isometric (norm-preserving)
+- `_rotate_half(x)` — splits last dim in half, returns `[-x2, x1]`; applied twice gives `-x` (180°)
+- Controlled by `use_rope` flag in `GENERAL_CONFIG` — base path completely unchanged when `False`
+- Verified with `scripts/test_rope.py` (8 tests): shape, position-dependence, norm preservation, _rotate_half involution, MHA output shape, causal mask, rope vs base output diff, sinusoidal PE skip
+
 ### `attention/multi_head.py` — `MultiHeadAttention`
 - `nn.Module` wrapping `AttentionProjections`, head splitting/recombination, `scaled_dot_product_attention`, and `W_o`
 - Reshape pattern: `(batch, seq_len, d_model)` → `view(...)` → `transpose(1, 2)` → `(batch, n_heads, seq_len, d_k)`
 - Auto-builds causal mask when `mask` argument is `None`
 - `return_attn_weights` flag (from config) controls whether forward returns `output` or `(output, weights)`
 - Owns the `nn.Dropout` instance for attention weights; passed into scaled-dot only during `self.training`
+- **RoPE support:** when `use_rope=True`, instantiates `RotaryEmbedding` and applies `apply_rotary` to Q and K after head split, before attention
 - Verified with `scripts/test_multi_head.py`: output shape, weights shape, weights sum-to-one per row, causal mask zeroes upper triangle
 
 ### `transformer/feed_forward.py` — `FeedForward`
@@ -276,6 +292,7 @@ checkpoint_name(tier, step, val_loss, arch="base")
 - Reads all `.txt` files from `data/raw/` automatically — drop new corpus files there and re-run
 - Tokenizes the full combined corpus as one flat sequence (no BOS/EOS)
 - 90/10 contiguous train/val split, saves to `data/processed/train.pt` and `val.pt` as `torch.long`
+- **Resume checkpointing:** flushes buffer to `prepare_part_{n:06d}.pt` every 1000 chunks; lightweight position checkpoint every 100 chunks; auto-migrates old format on load. At completion, cats all part files and deletes them. Safe to kill and restart at any point.
 - Run once before training; do not run until corpus is finalized
 
 ### `data/dataset.py` — `TokenDataset`
@@ -287,17 +304,17 @@ checkpoint_name(tier, step, val_loss, arch="base")
 ### `utils/seed.py` — `set_seed`
 - `set_seed(seed)` — sets `random`, `numpy`, `torch`, and `torch.cuda` seeds plus `PYTHONHASHSEED`; enables `cudnn.deterministic` and disables `cudnn.benchmark`
 
----
+### `model/generate.py`
+- `generate(model, idx, max_new_tokens, temperature, top_k, top_p, eos_token_id)` — full sampling pipeline under `torch.no_grad()`
+- `generate_stream(...)` — generator variant; yields one token ID at a time; used by the web interface
+- `greedy_decode(model, idx, max_new_tokens)` — deterministic argmax decoding
+- `_apply_top_k`, `_apply_top_p` — filtering helpers
 
-## What Has NOT Been Built Yet
-
-Implement these in order. Each step has a corresponding test script in `scripts/`.
-
-1. **Training loop (`training/train.py`)** — AdamW with parameter-group weight decay, linear warmup + cosine LR schedule, gradient clipping at `max_norm=1.0`, cross-entropy loss with reshape, validation every N steps, checkpointing, optional fp16 mixed precision
-3. **Sanity overfit test** — train on 5 fixed batches with `dropout=0.0`; loss must drop to <0.5 within ~1000 steps. Mandatory before any full run.
-4. **Generation (`model/generate.py`)** — greedy, temperature, top-k, top-p (nucleus); combined sampler under `torch.no_grad()` and `model.eval()`
-5. **CLI (`scripts/cli.py`)** — argparse: `--checkpoint`, `--prompt`, `--max-new-tokens`, `--temperature`, `--top-k`, `--top-p`
-6. **Visualization (`scripts/plot_curves.py`)** — loss/perplexity/LR curves; optional attention heatmaps
+### `web/app.py` — Flask streaming web interface
+- `GET /` → serves `index.html`
+- `POST /generate` → SSE stream; tokens JSON-encoded (`json.dumps(token_text)`) to handle BPE tokens with literal newlines; sentinel `"[DONE]"` signals end
+- `_load_model(path, device)` — reads `gen_config` from checkpoint, temporarily patches `GENERAL_CONFIG`, instantiates `GPT()`, then restores — model always built with the config it was trained on regardless of `ACTIVE_TIER`
+- Frontend uses `fetch()` + `response.body.getReader()` (not `EventSource` — EventSource only supports GET)
 
 ---
 
@@ -405,9 +422,7 @@ GPT-2 Medium : d_model=1024, 16 heads, 24 layers, ~345M params
 
 **TurboQuant KV cache quantization** — post-training inference optimization. Implemented as `TurboQuantKVCache` inside the attention layer (Option B). Use the `prod` variant from the paper (unbiased for inner-product estimation, which is exactly what `Q · K^T` is). Do not implement until the full model is trained and generating coherent text.
 
-**Web UI** — CLI is sufficient for the capstone. Web frontend (Flask/FastAPI server or ONNX-Runtime-Web) is bonus only.
-
-**Attention visualization** — heatmap of `(seq, seq)` attention weights per head/layer. Cool for the writeup; not on the critical path.
+**GQA (Grouped-Query Attention)** — reduces KV memory during inference by sharing key/value heads across groups of query heads. Active branch: `GQA`. Implement after the baseline `small-base` training run completes.
 
 ---
 
@@ -429,11 +444,17 @@ GPT-2 Medium : d_model=1024, 16 heads, 24 layers, ~345M params
 | 12 | Training loop (AdamW + warmup/cosine + grad clip) | ✅ Complete |
 | 13 | Sanity overfit test on tiny dataset | ✅ Complete |
 | 14 | Full training run with loss/perplexity logging | ✅ Complete (dev scale) |
-| 15 | Generation (greedy + temperature + top-k + top-p) | ✅ Complete |
+| 15 | Generation (greedy + temperature + top-k + top-p + streaming) | ✅ Complete |
 | 16 | CLI interface | ✅ Complete |
 | 17 | Training curve visualizations | ✅ Complete |
-| 18 | Capstone documentation (math + architecture writeup) | 🔲 |
-| 19 | TurboQuant KV cache (deferred bonus) | 🔲 |
+| 18 | Streaming web interface (Flask + SSE) | ✅ Complete |
+| 19 | RoPE (attention/rope.py, use_rope flag, sinusoidal PE skip, 8 tests) | ✅ Complete |
+| 20 | Checkpoint naming wired into training loop | ✅ Complete |
+| 21 | Attention heatmap (forward hook on last block, plot_curves.py) | ✅ Complete |
+| 22 | Full training run at small scale (prepare.py running) | 🔲 In progress |
+| 23 | Capstone writeup (skeleton in Obsidian, filling in after results) | 🔲 In progress |
+| 24 | GQA (Grouped-Query Attention) — branch `GQA` ready | 🔲 |
+| 25 | TurboQuant KV cache (deferred bonus) | 🔲 |
 
 ---
 
