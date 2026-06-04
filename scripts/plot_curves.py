@@ -259,10 +259,25 @@ def main() -> None:
         ids = tokenizer.encode(args.prompt, add_bos=False, add_eos=False)
         idx = torch.tensor([ids], dtype=torch.long, device=device)
 
-        # Run forward with return_attn_weights=True (last block's weights)
-        from utils.config import GENERAL_CONFIG as cfg
-        # TODO: collect attention weights from the last block's forward pass
-        print("Attention heatmap generation: TODO — requires hooking into block forward")
+        # Capture attention weights from the last block via a forward hook —
+        # avoids changing GPT's interface; weights are (batch, n_heads, seq, seq)
+        captured = {}
+        last_attn = model.blocks[-1].attn
+        last_attn.return_attn_weights = True
+        handle = last_attn.register_forward_hook(
+            lambda _m, _inp, out: captured.update({"weights": out[1].detach().cpu()})
+        )
+        with torch.no_grad():
+            model(idx)
+        handle.remove()
+        last_attn.return_attn_weights = False
+
+        if "weights" in captured:
+            weights = captured["weights"][0]   # (n_heads, seq_len, seq_len) — first batch item
+            token_strs = [tokenizer.decode([t]) for t in ids]
+            plot_attention_heatmaps(weights, token_strs, FIGURES_DIR / "attention_heatmap.png")
+        else:
+            print("Warning: attention weights not captured")
 
 
 if __name__ == "__main__":
