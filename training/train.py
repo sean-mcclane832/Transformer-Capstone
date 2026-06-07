@@ -21,7 +21,7 @@ from utils.seed import set_seed
 
 # hyperparameters and training config
 TRAIN_CONFIG = {
-    "batch_size":   32,
+    "batch_size":   8,
     "max_lr":       3e-4,
     "min_lr":       3e-5,       # max_lr / 10 — standard GPT-2 cosine schedule floor
     "warmup_steps": 2000,
@@ -68,12 +68,14 @@ def make_param_groups(model: GPT) -> list[dict]:
 
 
 @torch.no_grad()
-def evaluate_by_position(model: GPT, loader: DataLoader, device: torch.device) -> list:
+def evaluate_by_position(model: GPT, loader: DataLoader, device: torch.device, max_batches: int = 500) -> list:
     model.eval()
     seq_len   = GENERAL_CONFIG["max_seq_len"]
     pos_losses = torch.zeros(seq_len, device=device)
     pos_counts = torch.zeros(seq_len, device=device)
-    for x, y in loader:
+    for i, (x, y) in enumerate(loader):
+        if i >= max_batches:
+            break
         x, y = x.to(device), y.to(device)
         logits, _ = model(x)
         B, T, V   = logits.shape
@@ -85,12 +87,14 @@ def evaluate_by_position(model: GPT, loader: DataLoader, device: torch.device) -
 
 
 @torch.no_grad()
-def evaluate(model: GPT, loader: DataLoader, device: torch.device) -> float:
+def evaluate(model: GPT, loader: DataLoader, device: torch.device, max_batches: int = 200) -> float:
     model.eval()
     total, count = 0.0, 0
     for x, y in loader:
+        if count >= max_batches:
+            break
         x, y = x.to(device), y.to(device)
-        with torch.cuda.amp.autocast(enabled=TRAIN_CONFIG["use_amp"], dtype=torch.float16):
+        with torch.amp.autocast("cuda", enabled=TRAIN_CONFIG["use_amp"], dtype=torch.float16):
             _, loss = model(x, y)
         total += loss.item()
         count += 1
@@ -161,7 +165,7 @@ def train() -> None:
     )
 
     # ── AMP scaler (no-op when use_amp=False) ─────────────────────────────────
-    scaler = torch.cuda.amp.GradScaler(enabled=TRAIN_CONFIG["use_amp"])
+    scaler = torch.amp.GradScaler("cuda", enabled=TRAIN_CONFIG["use_amp"])
 
     # ── Sanity overfit: 5 fixed batches cycled repeatedly ─────────────────────
     if TRAIN_CONFIG["overfit_test"]:
@@ -228,7 +232,7 @@ def train() -> None:
                 group["lr"] = lr
 
             # Forward + loss
-            with torch.cuda.amp.autocast(enabled=TRAIN_CONFIG["use_amp"], dtype=torch.float16):
+            with torch.amp.autocast("cuda", enabled=TRAIN_CONFIG["use_amp"], dtype=torch.float16):
                 _, loss = model(x, y)
 
             # Backward
