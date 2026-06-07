@@ -278,7 +278,7 @@ def train() -> None:
                 if val_loss < best_loss:
                     best_loss = val_loss
                     save_checkpoint(model, optimizer, step, val_loss, ckpt_dir, tag="best")
-                    tqdm.write(f"  → new best checkpoint saved ({val_loss:.4f})")
+                    tqdm.write(f"  >> new best checkpoint saved ({val_loss:.4f})")
 
             # Periodic step checkpoint
             if step > 0 and step % TRAIN_CONFIG["ckpt_every"] == 0:
