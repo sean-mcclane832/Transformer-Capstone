@@ -100,8 +100,7 @@ if __name__ == "__main__":
         ckpt_path = ROOT / ckpt_path
 
     print(f"Loading tokenizer from {TOKENIZER_CONFIG['output']} ...")
-    _tokenizer = ByteBPETokenizer()
-    _tokenizer.load(TOKENIZER_CONFIG["output"])
+    _tokenizer = ByteBPETokenizer.load(TOKENIZER_CONFIG["output"])
     print(f"Tokenizer loaded. Vocab size: {_tokenizer.vocab_size}")
 
     print(f"Loading model from {ckpt_path} on {_device} ...")
