@@ -18,6 +18,7 @@ def generate(
     temperature: float = 1.0,
     top_k: int | None = None,
     top_p: float | None = None,
+    repetition_penalty: float = 1.0,
     eos_token_id: int | None = None,
 ) -> torch.Tensor:
     model.eval()
@@ -31,6 +32,11 @@ def generate(
             # Forward — only the last position's logits matter
             logits, _ = model(idx_cond)
             logits = logits[:, -1, :]   # (1, vocab_size)
+
+            # 0. Repetition penalty — divide logits of previously-seen tokens
+            #    alpha > 1.0 discourages repetition; 1.0 is a no-op
+            if repetition_penalty != 1.0:
+                logits = _apply_repetition_penalty(logits, idx, repetition_penalty)
 
             # 1. Temperature — scale before any filtering
             if temperature != 1.0:
@@ -54,6 +60,17 @@ def generate(
                 break
 
     return idx
+
+
+def _apply_repetition_penalty(logits: torch.Tensor, idx: torch.Tensor, alpha: float) -> torch.Tensor:
+    # For each token that appears in the current context, divide its logit by alpha
+    # (if positive) or multiply by alpha (if negative) — keeps the sign, reduces magnitude.
+    # Standard formulation from Keskar et al. 2019 "CTRL".
+    seen = idx[0].unique()
+    score = logits[0, seen]
+    score = torch.where(score > 0, score / alpha, score * alpha)
+    logits[0, seen] = score
+    return logits
 
 
 def _apply_top_k(logits: torch.Tensor, k: int) -> torch.Tensor:
@@ -87,6 +104,7 @@ def generate_stream(
     temperature: float = 1.0,
     top_k: int | None = None,
     top_p: float | None = None,
+    repetition_penalty: float = 1.0,
     eos_token_id: int | None = None,
 ):
     # streaming version of generate() — yields one token ID at a time instead of returning the full sequence
@@ -98,6 +116,8 @@ def generate_stream(
         logits, _ = model(idx_cond)
         logits = logits[:, -1, :]
 
+        if repetition_penalty != 1.0:
+            logits = _apply_repetition_penalty(logits, idx, repetition_penalty)
         if temperature != 1.0:
             logits = logits / temperature
         if top_k is not None:

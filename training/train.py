@@ -19,6 +19,20 @@ from utils.config import GENERAL_CONFIG, ACTIVE_TIER
 from utils.helpers import checkpoint_name
 from utils.seed import set_seed
 
+
+def _arch_tag() -> str:
+    """Derive a short arch identifier from the active config for checkpoint naming."""
+    use_rope = bool(GENERAL_CONFIG.get("use_rope", False))
+    n_kv     = GENERAL_CONFIG.get("n_kv_heads")
+    use_gqa  = n_kv is not None and n_kv < GENERAL_CONFIG["n_heads"]
+    if use_rope and use_gqa:
+        return "rope-gqa"
+    if use_rope:
+        return "rope"
+    if use_gqa:
+        return "gqa"
+    return "base"
+
 # hyperparameters and training config
 TRAIN_CONFIG = {
     "batch_size":   8,
@@ -107,10 +121,9 @@ def save_checkpoint(model: GPT, optimizer: torch.optim.Optimizer,
                     ckpt_dir: Path, tag: str | None = None) -> Path:
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     if tag:
-        path = ckpt_dir / f"{tag}.pt"
+        path = ckpt_dir / f"{tag}-{_arch_tag()}.pt"
     else:
-        arch = "rope" if GENERAL_CONFIG.get("use_rope") else "base"
-        path = ckpt_dir / checkpoint_name(ACTIVE_TIER, step, val_loss, arch=arch)
+        path = ckpt_dir / checkpoint_name(ACTIVE_TIER, step, val_loss, arch=_arch_tag())
     torch.save({
         "step":         step,
         "val_loss":     val_loss,

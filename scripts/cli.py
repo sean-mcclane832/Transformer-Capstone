@@ -48,6 +48,8 @@ def main() -> None:
                         help="Top-k filtering (e.g. 40); disabled if not set")
     parser.add_argument("--top-p",          type=float, default=None,
                         help="Nucleus sampling threshold (e.g. 0.9); disabled if not set")
+    parser.add_argument("--repetition-penalty", type=float, default=1.3,
+                        help="Repetition penalty alpha (default: 1.3); 1.0 disables it")
     parser.add_argument("--greedy",         action="store_true",
                         help="Use greedy decoding instead of sampling")
     parser.add_argument("--device",         type=str,   default=GENERAL_CONFIG["device"],
@@ -68,7 +70,8 @@ def main() -> None:
 
     print(f"\nPrompt: {args.prompt!r}")
     print(f"Generating {args.max_new_tokens} tokens "
-          f"(temperature={args.temperature}, top_k={args.top_k}, top_p={args.top_p}) ...\n")
+          f"(temperature={args.temperature}, top_k={args.top_k}, top_p={args.top_p}, "
+          f"rep_penalty={args.repetition_penalty}) ...\n")
     print("-" * 60)
 
     if args.greedy:
@@ -81,6 +84,7 @@ def main() -> None:
             temperature=args.temperature,
             top_k=args.top_k,
             top_p=args.top_p,
+            repetition_penalty=args.repetition_penalty,
         )
 
     # Decode only the newly generated tokens (skip the prompt)

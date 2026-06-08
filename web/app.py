@@ -49,12 +49,13 @@ def index():
 
 @app.route("/generate", methods=["POST"])
 def generate_route():
-    body           = request.get_json(force=True)
-    prompt         = body.get("prompt", "")
-    max_new_tokens = int(body.get("max_new_tokens", 200))
-    temperature    = float(body.get("temperature", 0.8))
-    top_k          = int(body.get("top_k", 40))
-    top_p          = float(body.get("top_p", 0.9))
+    body               = request.get_json(force=True)
+    prompt             = body.get("prompt", "")
+    max_new_tokens     = int(body.get("max_new_tokens", 200))
+    temperature        = float(body.get("temperature", 0.8))
+    top_k              = int(body.get("top_k", 40))
+    top_p              = float(body.get("top_p", 0.9))
+    repetition_penalty = float(body.get("repetition_penalty", 1.3))
 
     # Frontend sends 0 for "disabled"; convert to None for the sampler
     top_k_arg = top_k if top_k > 0 else None
@@ -70,6 +71,7 @@ def generate_route():
                 temperature=temperature,
                 top_k=top_k_arg,
                 top_p=top_p_arg,
+                repetition_penalty=repetition_penalty,
             ):
                 token_text = _tokenizer.decode([token_id])
                 yield f"data: {json.dumps(token_text)}\n\n"
