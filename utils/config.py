@@ -12,6 +12,7 @@ _BASE_CONFIG = {
     "dropout":             0.1,
     "return_attn_weights": False,
     "use_rope":            True,   # set True to enable Rotary Position Embeddings in attention
+    "n_kv_heads":          4,      # GQA: 4 KV heads shared across 12 Q heads (3 query groups); set None for standard MHA
 }
 
 # ── Size presets — architecture-varying keys only ─────────────────────────

@@ -19,7 +19,15 @@ class MultiHeadAttention(nn.Module):
 
         self.d_k = self.d_model // self.n_heads
         self.return_attn_weights = GENERAL_CONFIG["return_attn_weights"]
-        self.projections = AttentionProjections(self.d_model)
+
+        # GQA: n_kv_heads < n_heads shares K/V heads across groups of Q heads.
+        # None falls back to standard MHA (n_kv_heads == n_heads).
+        cfg_kv = GENERAL_CONFIG.get("n_kv_heads") or self.n_heads
+        assert self.n_heads % cfg_kv == 0, "n_heads must be divisible by n_kv_heads"
+        self.n_kv_heads = cfg_kv
+        self.n_groups   = self.n_heads // self.n_kv_heads  # Q heads per KV head
+
+        self.projections = AttentionProjections(self.d_model, self.n_heads, self.n_kv_heads)
         self.dropout = nn.Dropout(self.dropout_p)
 
         self.W_o = nn.Linear(self.d_model, self.d_model, bias=False)
@@ -33,26 +41,31 @@ class MultiHeadAttention(nn.Module):
         batch, seq_len, _ = x.size()
         Q, K, V = self.projections(x)
 
-        # (batch, n_heads, seq_len, d_k)
-        Q = Q.view(batch, seq_len, self.n_heads, self.d_k).transpose(1, 2)
-        K = K.view(batch, seq_len, self.n_heads, self.d_k).transpose(1, 2)
-        V = V.view(batch, seq_len, self.n_heads, self.d_k).transpose(1, 2)
+        # Q: (batch, n_heads, seq_len, d_k)
+        Q = Q.view(batch, seq_len, self.n_heads,    self.d_k).transpose(1, 2)
+        # K, V: (batch, n_kv_heads, seq_len, d_k)
+        K = K.view(batch, seq_len, self.n_kv_heads, self.d_k).transpose(1, 2)
+        V = V.view(batch, seq_len, self.n_kv_heads, self.d_k).transpose(1, 2)
 
         if self.use_rope:
             cos, sin = self.rope(seq_len)
             Q = apply_rotary(Q, cos, sin)
-            K = apply_rotary(K, cos, sin)
+            K = apply_rotary(K, cos, sin)  # RoPE applied before KV expansion
+
+        # Expand K and V to match n_heads by repeating each KV head n_groups times.
+        # repeat_interleave is equivalent to the expand used in flash-attn GQA kernels.
+        if self.n_groups > 1:
+            K = K.repeat_interleave(self.n_groups, dim=1)  # → (batch, n_heads, seq_len, d_k)
+            V = V.repeat_interleave(self.n_groups, dim=1)
 
         if mask is None:
             mask = causal_mask(seq_len).unsqueeze(0).unsqueeze(0).to(x.device)
         attn_output, weights = scaled_dot_product_attention(Q, K, V, mask, self.dropout if self.training else None)
 
-        # attn_output shape: (batch, n_heads, seq_len, d_k)
-        attn_output = attn_output.transpose(1, 2) # → (batch, seq_len, n_heads, d_k)
-        attn_output = attn_output.contiguous().view(batch, seq_len, self.d_model)  # → (batch, seq_len, d_model)
+        # attn_output: (batch, n_heads, seq_len, d_k) → (batch, seq_len, d_model)
+        attn_output = attn_output.transpose(1, 2).contiguous().view(batch, seq_len, self.d_model)
 
         output = self.W_o(attn_output)
         if self.return_attn_weights:
             return output, weights
         return output
-

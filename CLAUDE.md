@@ -263,8 +263,9 @@ checkpoint_name(tier, step, val_loss, arch="base")
 - Auto-builds causal mask when `mask` argument is `None`
 - `return_attn_weights` flag (from config) controls whether forward returns `output` or `(output, weights)`
 - Owns the `nn.Dropout` instance for attention weights; passed into scaled-dot only during `self.training`
-- **RoPE support:** when `use_rope=True`, instantiates `RotaryEmbedding` and applies `apply_rotary` to Q and K after head split, before attention
-- Verified with `scripts/test_multi_head.py`: output shape, weights shape, weights sum-to-one per row, causal mask zeroes upper triangle
+- **RoPE support:** when `use_rope=True`, instantiates `RotaryEmbedding` and applies `apply_rotary` to Q and K after head split, before KV expansion
+- **GQA support:** when `n_kv_heads < n_heads` (set via `GENERAL_CONFIG["n_kv_heads"]`), W_k/W_v project to `n_kv_heads * d_k` instead of `d_model`; K and V are expanded to `n_heads` via `repeat_interleave(n_groups, dim=1)` before attention. `None` falls back to standard MHA. Controlled by `n_kv_heads` in `_BASE_CONFIG`.
+- Verified with `scripts/test_multi_head.py` (MHA) and `scripts/test_gqa.py` (8 GQA tests: output shape, weights shape, sum-to-one, causal mask, projection size reduction, GQA differs from MHA, MQA edge case)
 
 ### `transformer/feed_forward.py` — `FeedForward`
 - Two linear layers with GELU activation: `W_1 (d_model → d_ff)` → GELU → Dropout → `W_2 (d_ff → d_model)`
@@ -454,7 +455,7 @@ GPT-2 Medium : d_model=1024, 16 heads, 24 layers, ~345M params
 | 21 | Attention heatmap (forward hook on last block, plot_curves.py) | ✅ Complete |
 | 22 | Full training run at small scale (prepare.py running) | 🔲 In progress |
 | 23 | Capstone writeup (skeleton in Obsidian, filling in after results) | 🔲 In progress |
-| 24 | GQA (Grouped-Query Attention) — branch `GQA` ready | 🔲 |
+| 24 | GQA (Grouped-Query Attention) — implemented, 8 tests passing, training run planned | ✅ Complete |
 | 25 | TurboQuant KV cache (deferred bonus) | 🔲 |
 
 ---
