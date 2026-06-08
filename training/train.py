@@ -35,20 +35,22 @@ def _arch_tag() -> str:
 
 # hyperparameters and training config
 TRAIN_CONFIG = {
-    "batch_size":   8,
-    "max_lr":       3e-4,
-    "min_lr":       3e-5,       # max_lr / 10 — standard GPT-2 cosine schedule floor
-    "warmup_steps": 2000,
-    "max_steps":    100_000,
-    "weight_decay": 0.1,
-    "betas":        (0.9, 0.95),
-    "eps":          1e-8,
-    "grad_clip":    1.0,
-    "val_every":    1000,       # run validation every N steps
-    "ckpt_every":   5000,       # save a step checkpoint every N steps
-    "ckpt_keep":    3,          # how many step checkpoints to keep on disk
-    "use_amp":      True,       # fp16 mixed precision on GPU
-    "overfit_test": False,      # True to run sanity overfit on 5 fixed batches
+    "batch_size":               8,
+    "grad_accum_steps":         1,   # accumulate gradients over N micro-batches before stepping
+                                     # effective batch = batch_size * grad_accum_steps
+    "max_lr":                   3e-4,
+    "min_lr":                   3e-5,       # max_lr / 10 — standard GPT-2 cosine schedule floor
+    "warmup_steps":             2000,
+    "max_steps":                100_000,    # optimizer steps (not micro-batch steps)
+    "weight_decay":             0.1,
+    "betas":                    (0.9, 0.95),
+    "eps":                      1e-8,
+    "grad_clip":                1.0,
+    "val_every":                1000,       # run validation every N optimizer steps
+    "ckpt_every":               5000,       # save a step checkpoint every N optimizer steps
+    "ckpt_keep":                3,          # how many step checkpoints to keep on disk
+    "use_amp":                  True,       # fp16 mixed precision on GPU
+    "overfit_test":             False,      # True to run sanity overfit on 5 fixed batches
 }
 
 
@@ -229,8 +231,12 @@ def train() -> None:
     step         = 0
     tokens_seen  = 0
 
+    accum_steps = TRAIN_CONFIG["grad_accum_steps"]
     model.train()
     pbar = tqdm(total=TRAIN_CONFIG["max_steps"], desc="Training", unit="step", dynamic_ncols=True)
+    micro_step  = 0      # counts individual forward passes
+    accum_loss  = 0.0    # sum of micro-batch losses for logging
+
     while step < TRAIN_CONFIG["max_steps"]:
         for x, y in train_loader:
             if step >= TRAIN_CONFIG["max_steps"]:
@@ -239,17 +245,33 @@ def train() -> None:
             t0 = time.perf_counter()
             x, y = x.to(device), y.to(device)
 
-            # Set LR before forward so warmup schedule is correct from step 0
-            lr = get_lr(step)
-            for group in optimizer.param_groups:
-                group["lr"] = lr
+            is_accum_boundary = (micro_step + 1) % accum_steps == 0
 
-            # Forward + loss
+            # Set LR at each optimizer step (not micro-step) so the schedule
+            # stays synchronised with the step counter
+            if micro_step % accum_steps == 0:
+                lr = get_lr(step)
+                for group in optimizer.param_groups:
+                    group["lr"] = lr
+
+            # Forward + loss — divide by accum_steps so gradient magnitudes are
+            # independent of how many micro-batches we accumulate
             with torch.amp.autocast("cuda", enabled=TRAIN_CONFIG["use_amp"], dtype=torch.float16):
                 _, loss = model(x, y)
+            scaled_loss = loss / accum_steps
+            accum_loss += loss.item()
 
-            # Backward
-            scaler.scale(loss).backward()
+            scaler.scale(scaled_loss).backward()
+
+            micro_step += 1
+
+            if not is_accum_boundary:
+                tokens_seen += TRAIN_CONFIG["batch_size"] * GENERAL_CONFIG["max_seq_len"]
+                continue  # accumulate more micro-batches before stepping
+
+            # ── Optimizer step (every accum_steps micro-batches) ──────────────
+            avg_loss = accum_loss / accum_steps
+            accum_loss = 0.0
 
             # Unscale before clip so clip operates on true gradient magnitudes
             scaler.unscale_(optimizer)
@@ -270,18 +292,18 @@ def train() -> None:
             scaler.update()
             optimizer.zero_grad(set_to_none=True)
 
-            tokens_seen += TRAIN_CONFIG["batch_size"] * GENERAL_CONFIG["max_seq_len"]
+            tokens_seen += TRAIN_CONFIG["batch_size"] * accum_steps * GENERAL_CONFIG["max_seq_len"]
             log["train_steps"].append(step)
-            log["train_losses"].append(loss.item())
+            log["train_losses"].append(avg_loss)
             log["lrs"].append(lr)
             log["gnorms"].append(gnorm)
             log["tokens_seen"].append(tokens_seen)
 
             dt_ms = (time.perf_counter() - t0) * 1000
             pbar.update(1)
-            pbar.set_postfix(loss=f"{loss.item():.4f}", ppl=f"{math.exp(min(loss.item(), 20)):.1f}", lr=f"{lr:.2e}", ms=f"{dt_ms:.0f}")
+            pbar.set_postfix(loss=f"{avg_loss:.4f}", ppl=f"{math.exp(min(avg_loss, 20)):.1f}", lr=f"{lr:.2e}", ms=f"{dt_ms:.0f}")
 
-            # Validation — also saves log incrementally so a crash doesn't lose the curve
+            # Validation — only at optimizer step boundaries
             if step > 0 and step % TRAIN_CONFIG["val_every"] == 0:
                 val_loss = evaluate(model, val_loader, device)
                 tqdm.write(f"  step {step:5d} | val loss {val_loss:.4f} | val ppl {math.exp(min(val_loss, 20)):.2f}")
@@ -295,7 +317,7 @@ def train() -> None:
 
             # Periodic step checkpoint
             if step > 0 and step % TRAIN_CONFIG["ckpt_every"] == 0:
-                save_checkpoint(model, optimizer, step, loss.item(), ckpt_dir)
+                save_checkpoint(model, optimizer, step, avg_loss, ckpt_dir)
                 prune_checkpoints(ckpt_dir, keep=TRAIN_CONFIG["ckpt_keep"])
 
             step += 1

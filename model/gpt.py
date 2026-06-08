@@ -48,7 +48,9 @@ class GPT(nn.Module):
 
         self.ln_f    = LayerNorm(self.d_model)
         self.lm_head = nn.Linear(self.d_model, self.vocab_size, bias=False)
-        self.lm_head.weight = self.token_emb.token_embeddings.weight  #tie weights
+
+        if GENERAL_CONFIG.get("tie_weights", True):
+            self.lm_head.weight = self.token_emb.token_embeddings.weight
 
         self.apply(self._init_weights)
 

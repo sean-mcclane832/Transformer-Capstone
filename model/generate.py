@@ -66,6 +66,7 @@ def _apply_repetition_penalty(logits: torch.Tensor, idx: torch.Tensor, alpha: fl
     # For each token that appears in the current context, divide its logit by alpha
     # (if positive) or multiply by alpha (if negative) — keeps the sign, reduces magnitude.
     # Standard formulation from Keskar et al. 2019 "CTRL".
+    assert idx.size(0) == 1, "repetition penalty only supports batch_size=1"
     seen = idx[0].unique()
     score = logits[0, seen]
     score = torch.where(score > 0, score / alpha, score * alpha)

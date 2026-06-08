@@ -1,4 +1,6 @@
+import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from utils.config import GENERAL_CONFIG
 
@@ -7,39 +9,48 @@ class FeedForward(nn.Module):
     """
     Position-wise feed-forward network.
 
-    The same MLP is applied independently at every sequence position. Attention
-    already handled cross-token mixing. This module's job is per-token nonlinear
-    processing. The inner dimension expands to d_ff (= 4 * d_model by convention),
-    runs through a nonlinearity, then contracts back to d_model.
+    Two variants controlled by GENERAL_CONFIG["use_swiglu"]:
 
-    Architecture:
-        x -> Linear(d_model -> d_ff) -> GELU -> Dropout -> Linear(d_ff -> d_model)
+    GELU (GPT-2 default, use_swiglu=False):
+        x -> W_1 -> GELU -> Dropout -> W_2
+
+    SwiGLU (LLaMA style, use_swiglu=True):
+        x -> SiLU(W_1 · x) ⊙ (Wg · x) -> Dropout -> W_2
+        d_ff is scaled to 2/3 of the GELU baseline so both variants
+        have the same parameter count (SwiGLU uses 3 matrices vs 2).
     """
 
     def __init__(self):
         super().__init__()
 
-        self.d_model   = GENERAL_CONFIG["d_model"]
-        self.d_ff      = GENERAL_CONFIG["d_ff"]
-        self.dropout_p = GENERAL_CONFIG["dropout"]
+        self.d_model    = GENERAL_CONFIG["d_model"]
+        self.dropout_p  = GENERAL_CONFIG["dropout"]
+        self.use_swiglu = GENERAL_CONFIG.get("use_swiglu", False)
 
-        # Expand: d_model -> d_ff
-        self.W_1 = nn.Linear(self.d_model, self.d_ff, bias=True)
+        if self.use_swiglu:
+            # Scale inner dim to 2/3 of baseline so param count matches GELU.
+            # GELU: 2 * d_model * d_ff params; SwiGLU: 3 * d_model * d_ff_swi
+            # Setting d_ff_swi = 2/3 * d_ff makes both equal.
+            d_ff = int(2 / 3 * GENERAL_CONFIG["d_ff"])
+            self.W_gate = nn.Linear(self.d_model, d_ff, bias=True)
+            self.W_1    = nn.Linear(self.d_model, d_ff, bias=True)
+            self.W_2    = nn.Linear(d_ff, self.d_model, bias=True)
+        else:
+            d_ff = GENERAL_CONFIG["d_ff"]
+            self.W_1 = nn.Linear(self.d_model, d_ff, bias=True)
+            self.W_2 = nn.Linear(d_ff, self.d_model, bias=True)
 
-        # GPT-2 activation
-        self.activation = nn.GELU()
-
-        # Dropout on activations
+        self.W_2.is_residual_projection = True
         self.dropout = nn.Dropout(self.dropout_p)
 
-        # Contract: d_ff -> d_model
-        self.W_2 = nn.Linear(self.d_ff, self.d_model, bias=True)
-        self.W_2.is_residual_projection = True
-
     def forward(self, x):
-        # x: (batch, seq_len, d_model)
-        x = self.W_1(x)           # -> (batch, seq_len, d_ff)
-        x = self.activation(x)    # -> (batch, seq_len, d_ff)
-        x = self.dropout(x)       # -> (batch, seq_len, d_ff)
-        x = self.W_2(x)           # -> (batch, seq_len, d_model)
+        if self.use_swiglu:
+            # SwiGLU: gate the hidden state with a sigmoid-linear unit
+            x = F.silu(self.W_1(x)) * self.W_gate(x)
+            x = self.dropout(x)
+            x = self.W_2(x)
+        else:
+            x = F.gelu(self.W_1(x))
+            x = self.dropout(x)
+            x = self.W_2(x)
         return x

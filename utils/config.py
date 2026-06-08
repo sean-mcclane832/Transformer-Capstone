@@ -13,6 +13,10 @@ _BASE_CONFIG = {
     "return_attn_weights": False,
     "use_rope":            True,   # set True to enable Rotary Position Embeddings in attention
     "n_kv_heads":          4,      # GQA: 4 KV heads shared across 12 Q heads (3 query groups); set None for standard MHA
+    # ablation flags — default values match the baseline GPT-2 design
+    "pre_ln":              True,   # True = Pre-LN (GPT-2 style); False = Post-LN (original Vaswani)
+    "use_swiglu":          False,  # True = SwiGLU activation (LLaMA style); False = GELU (GPT-2 style)
+    "tie_weights":         True,   # True = tie lm_head.weight to token embedding (GPT-2 style)
 }
 
 # ── Size presets — architecture-varying keys only ─────────────────────────

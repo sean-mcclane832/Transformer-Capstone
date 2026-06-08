@@ -64,9 +64,9 @@ Transformer-Capstone/
 │   ├── rope.py                 # RotaryEmbedding, apply_rotary, _rotate_half
 │   └── kv_cache.py             🔲 # TurboQuantKVCache — deferred post-training optimization
 ├── transformer/
-│   ├── feed_forward.py         # FeedForward (FFN) module
+│   ├── feed_forward.py         # FeedForward (FFN) module — GELU or SwiGLU via use_swiglu flag
 │   ├── layer_norm.py           # custom LayerNorm
-│   └── block.py                # TransformerBlock (Pre-LN)
+│   └── block.py                # TransformerBlock (Pre-LN or Post-LN via pre_ln flag)
 ├── model/
 │   ├── gpt.py                  # GPT class (embeddings + blocks + LM head)
 │   └── generate.py             # generate(), generate_stream(), greedy_decode(), _apply_top_k/p helpers
@@ -96,7 +96,10 @@ Transformer-Capstone/
 │   ├── test_generate.py        # Unit tests for generate() / greedy_decode()
 │   ├── test_rope.py            # Unit tests for RoPE (8 tests)
 │   ├── plot_curves.py          # training curve + attention heatmap visualizations (fully implemented)
-│   └── cli.py                  # CLI: prompt → generated text
+│   ├── cli.py                  # CLI: prompt → generated text
+│   ├── analyze_induction_heads.py  # induction head detector + heatmap (Olsson et al. method)
+│   ├── analyze_embeddings.py       # token embedding PCA + cosine similarity
+│   └── analyze_domain_loss.py      # per-domain perplexity breakdown (5 corpus sources)
 ├── web/
 │   ├── app.py                  # Flask backend — SSE streaming generation endpoint
 │   ├── static/style.css        # dark theme stylesheet
@@ -195,7 +198,12 @@ ACTIVE_TIER = "small"   # change to "nano" for dev/overfit work
 | `d_ff` | 256 | 3072 |
 | `max_seq_len` | 64 | 512 |
 
-Shared across all tiers: `seed=42`, `device="cuda"`, `vocab_size=32768`, `dropout=0.1`, `return_attn_weights=False`, `use_rope=False`.
+Shared across all tiers: `seed=42`, `device="cuda"`, `vocab_size=32768`, `dropout=0.1`, `return_attn_weights=False`, `use_rope=True`, `n_kv_heads=4`.
+
+**Ablation flags** (default values match baseline GPT-2 design, safe to flip for nano runs):
+- `pre_ln=True` — Pre-LN (GPT-2) vs Post-LN (Vaswani original)
+- `use_swiglu=False` — SwiGLU (LLaMA) vs GELU (GPT-2); d_ff auto-scales to 2/3 for fair param count
+- `tie_weights=True` — weight tying on/off in GPT lm_head
 
 `vocab_size` never changes between tiers — it is tied to the trained tokenizer.
 
@@ -307,10 +315,11 @@ checkpoint_name(tier, step, val_loss, arch="base")
 - `set_seed(seed)` — sets `random`, `numpy`, `torch`, and `torch.cuda` seeds plus `PYTHONHASHSEED`; enables `cudnn.deterministic` and disables `cudnn.benchmark`
 
 ### `model/generate.py`
-- `generate(model, idx, max_new_tokens, temperature, top_k, top_p, eos_token_id)` — full sampling pipeline under `torch.no_grad()`
+- `generate(model, idx, max_new_tokens, temperature, top_k, top_p, repetition_penalty, eos_token_id)` — full sampling pipeline under `torch.no_grad()`
 - `generate_stream(...)` — generator variant; yields one token ID at a time; used by the web interface
 - `greedy_decode(model, idx, max_new_tokens)` — deterministic argmax decoding
-- `_apply_top_k`, `_apply_top_p` — filtering helpers
+- `_apply_top_k`, `_apply_top_p`, `_apply_repetition_penalty` — filtering helpers
+- Repetition penalty (CTRL formulation, Keskar et al. 2019): divide positive logits / multiply negative logits for seen tokens; applied before temperature; batch_size=1 enforced by assert
 
 ### `web/app.py` — Flask streaming web interface
 - `GET /` → serves `index.html`
@@ -334,9 +343,10 @@ checkpoint_name(tier, step, val_loss, arch="base")
 - Apply `W_o: (d_model, d_model)`, `bias=False`
 
 ### FeedForward
-- Activation: **GELU** (matches GPT-2). Not ReLU.
-- Inner dimension: `d_ff = 4 * d_model` (convention)
-- `bias=True` on both linear layers (different from attention)
+- Activation: **GELU** (default, `use_swiglu=False`). Not ReLU.
+- **SwiGLU variant** (`use_swiglu=True`): `SiLU(W_1·x) ⊙ (Wg·x)` — three matrices; `d_ff = int(2/3 * baseline_d_ff)` to keep param count identical to GELU variant. This is LLaMA-style.
+- Inner dimension: `d_ff = 4 * d_model` (convention for GELU); auto-scaled for SwiGLU
+- `bias=True` on all linear layers (different from attention)
 - Dropout placement: after activation, before `W_2`
 - No nonlinearity after `W_2` — block ends linear
 
@@ -374,6 +384,7 @@ checkpoint_name(tier, step, val_loss, arch="base")
 - **Perplexity:** `exp(loss)` for logging
 - **Checkpoint cadence:** every N steps + best-val-loss; keep last 3 + best
 - **Mixed precision:** `torch.cuda.amp.autocast(dtype=torch.float16)` + `GradScaler` once on GPU; unscale before grad clip
+- **Gradient accumulation:** `grad_accum_steps` (default 1, no-op). Loss is divided by `accum_steps` per micro-batch. Optimizer step, validation, and checkpointing fire only at accumulation boundaries, not per micro-batch.
 
 ### Sanity overfit test
 - Run before any full training run
@@ -453,10 +464,17 @@ GPT-2 Medium : d_model=1024, 16 heads, 24 layers, ~345M params
 | 19 | RoPE (attention/rope.py, use_rope flag, sinusoidal PE skip, 8 tests) | ✅ Complete |
 | 20 | Checkpoint naming wired into training loop | ✅ Complete |
 | 21 | Attention heatmap (forward hook on last block, plot_curves.py) | ✅ Complete |
-| 22 | Full training run at small scale (prepare.py running) | 🔲 In progress |
+| 22 | Full training run at small scale (prepare.py running) | 🔲 In progress (RoPE run ~50K/100K) |
 | 23 | Capstone writeup (skeleton in Obsidian, filling in after results) | 🔲 In progress |
 | 24 | GQA (Grouped-Query Attention) — implemented, 8 tests passing, training run planned | ✅ Complete |
-| 25 | TurboQuant KV cache (deferred bonus) | 🔲 |
+| 25 | Gradient accumulation (`grad_accum_steps` in TRAIN_CONFIG) | ✅ Complete |
+| 26 | Ablation infrastructure (pre_ln / use_swiglu / tie_weights config flags) | ✅ Complete |
+| 27 | Induction head detector (`scripts/analyze_induction_heads.py`) | ✅ Complete |
+| 28 | Embedding PCA visualisation (`scripts/analyze_embeddings.py`) | ✅ Complete |
+| 29 | Per-domain perplexity breakdown (`scripts/analyze_domain_loss.py`) | ✅ Complete |
+| 30 | Chinchilla scaling analysis (vault: Chinchilla-Analysis.md) | ✅ Complete |
+| 31 | Ablation training runs (Pre/Post-LN, SwiGLU, weight tying — nano scale) | 🔲 |
+| 32 | TurboQuant KV cache (deferred bonus) | 🔲 |
 
 ---
 
@@ -467,9 +485,12 @@ For Milestone 18, the writeup should include:
 1. **Architectural derivation** — every component mathematically. Embeddings, the QK^T/√d_k story, masking, residuals, LayerNorm, FFN. Cite Vaswani et al. and Radford et al.
 2. **Implementation choices** — Pre-LN vs Post-LN, AdamW vs Adam, weight tying, init scheme, BPE vs char. Why each choice.
 3. **Training methodology** — dataset, tokenization, splits, hyperparameters, hardware, runtime
-4. **Results** — loss curves, perplexity, sample generations at different temperatures/sampling strategies
-5. **Failure modes & limitations** — repetition, drift, factual errors, context length. Honest assessment.
-6. **Reflection** — what scaling would buy, what you'd change, why "just use HuggingFace" misses the point
+4. **Compute analysis** — Chinchilla positioning, FLOPs estimate, why our perplexity is high (data-limited, not architecture-limited)
+5. **Results** — loss curves, perplexity, sample generations at different temperatures/sampling strategies; per-domain breakdown
+6. **Architectural ablations** — RoPE vs sinusoidal PE, GQA vs full MHA, SwiGLU vs GELU, Pre-LN vs Post-LN (nano-scale results)
+7. **Mechanistic interpretability** — induction head detection, embedding PCA structure
+8. **Failure modes & limitations** — repetition, drift, factual errors, context length. Honest assessment.
+9. **Reflection** — what scaling would buy, what you'd change, why "just use HuggingFace" misses the point
 
 ---
 
