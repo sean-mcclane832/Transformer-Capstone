@@ -262,7 +262,7 @@ def main() -> None:
         # Capture attention weights from the last block via a forward hook —
         # avoids changing GPT's interface; weights are (batch, n_heads, seq, seq)
         captured = {}
-        last_attn = model.blocks[-1].attn
+        last_attn = model.blocks[-1].attention
         last_attn.return_attn_weights = True
         handle = last_attn.register_forward_hook(
             lambda _m, _inp, out: captured.update({"weights": out[1].detach().cpu()})
@@ -270,7 +270,7 @@ def main() -> None:
         with torch.no_grad():
             model(idx)
         handle.remove()
-        last_attn.return_attn_weights = False
+        last_attn.return_attn_weights = False  # type: ignore[assignment]
 
         if "weights" in captured:
             weights = captured["weights"][0]   # (n_heads, seq_len, seq_len) — first batch item
