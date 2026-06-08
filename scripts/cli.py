@@ -31,9 +31,7 @@ def load_model(checkpoint_path: str, device: torch.device) -> GPT:
 
 
 def load_tokenizer() -> ByteBPETokenizer:
-    tokenizer = ByteBPETokenizer()
-    tokenizer.load(TOKENIZER_CONFIG["output"])
-    return tokenizer
+    return ByteBPETokenizer.load(TOKENIZER_CONFIG["output"])
 
 
 def main() -> None:
@@ -87,7 +85,11 @@ def main() -> None:
 
     # Decode only the newly generated tokens (skip the prompt)
     generated_ids = output_ids[0, len(prompt_ids):].tolist()
-    print(args.prompt + tokenizer.decode(generated_ids))
+    full_text = args.prompt + tokenizer.decode(generated_ids)
+    print("-" * 60)
+    sys.stdout.flush()
+    sys.stdout.buffer.write((full_text + "\n").encode("utf-8", errors="replace"))
+    sys.stdout.buffer.flush()
     print("-" * 60)
 
 
