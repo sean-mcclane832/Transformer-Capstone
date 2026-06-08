@@ -157,6 +157,10 @@ class ByteBPETokenizer:
 
     @classmethod
     def load(cls, path: str) -> "ByteBPETokenizer":
+        # ALWAYS call as ByteBPETokenizer.load(path) — never tok = ByteBPETokenizer(); tok.load(path).
+        # The instance-method call silently discards the returned object, leaving an empty
+        # tokenizer with no merges (byte-level fallback). This bug hit cli.py, web/app.py,
+        # and plot_curves.py before being caught.
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
 

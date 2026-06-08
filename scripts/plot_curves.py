@@ -247,8 +247,7 @@ def main() -> None:
         from text_processing.token_class import ByteBPETokenizer
         from utils.config import TOKENIZER_CONFIG, GENERAL_CONFIG
 
-        tokenizer = ByteBPETokenizer()
-        tokenizer.load(TOKENIZER_CONFIG["output"])
+        tokenizer = ByteBPETokenizer.load(TOKENIZER_CONFIG["output"])
 
         device = torch.device(GENERAL_CONFIG["device"])
         ckpt   = torch.load(args.checkpoint, map_location=device)

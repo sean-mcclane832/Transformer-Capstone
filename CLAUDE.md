@@ -220,6 +220,7 @@ checkpoint_name(tier, step, val_loss, arch="base")
 - `.encode(text, add_bos, add_eos)` → list of token IDs
 - `.decode(ids)` → string
 - Serializable via `.save()` / `.load()`
+- **Critical:** `.load()` is a `@classmethod` that constructs and *returns* a new instance. Always call as `ByteBPETokenizer.load(path)`. Never do `tok = ByteBPETokenizer(); tok.load(path)` — the instance-method form silently discards the returned object, leaving a no-merges (byte-level) tokenizer. Symptom: all generated text is single raw bytes (token IDs 0–255).
 
 ### `text_processing/embedding_classes.py`
 - `InputEmbeddings(d_model, vocab_size)` — learned `nn.Embedding` lookup, scaled by `sqrt(d_model)` per the original paper
