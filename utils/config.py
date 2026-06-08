@@ -11,7 +11,7 @@ _BASE_CONFIG = {
     "vocab_size":          32768,  # tied to the trained tokenizer — never changes between tiers
     "dropout":             0.1,
     "return_attn_weights": False,
-    "use_rope":            False,  # set True to enable Rotary Position Embeddings in attention
+    "use_rope":            True,   # set True to enable Rotary Position Embeddings in attention
 }
 
 # ── Size presets — architecture-varying keys only ─────────────────────────
