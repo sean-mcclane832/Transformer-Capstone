@@ -31,6 +31,7 @@ def _load_model(checkpoint_path: Path, device: torch.device) -> GPT:
     # then restore it so nothing else in the process sees a different config
     if "gen_config" in ckpt:
         original = dict(_cfg.GENERAL_CONFIG)
+        _cfg.GENERAL_CONFIG.clear()           # clear first so stale keys don't survive
         _cfg.GENERAL_CONFIG.update(ckpt["gen_config"])
     m = GPT().to(device)
     if "gen_config" in ckpt:

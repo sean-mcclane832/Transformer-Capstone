@@ -20,12 +20,20 @@ from model.gpt import GPT
 from model.generate import generate
 from text_processing.token_class import ByteBPETokenizer
 from utils.config import GENERAL_CONFIG, TOKENIZER_CONFIG
+import utils.config as _cfg
 
 
 def load_model(checkpoint_path: str, device: torch.device) -> GPT:
-    ckpt = torch.load(checkpoint_path, map_location=device)
+    ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    if "gen_config" in ckpt:
+        original = dict(_cfg.GENERAL_CONFIG)
+        _cfg.GENERAL_CONFIG.clear()
+        _cfg.GENERAL_CONFIG.update(ckpt["gen_config"])
     model = GPT().to(device)
-    model.load_state_dict(ckpt["model"])
+    if "gen_config" in ckpt:
+        _cfg.GENERAL_CONFIG.clear()
+        _cfg.GENERAL_CONFIG.update(original)
+    model.load_state_dict(ckpt.get("model", ckpt))
     model.eval()
     return model
 

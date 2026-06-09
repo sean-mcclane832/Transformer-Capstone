@@ -53,6 +53,7 @@ def load_model(ckpt_path: Path, device: torch.device) -> GPT:
     ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
     if "gen_config" in ckpt:
         original = dict(_cfg.GENERAL_CONFIG)
+        _cfg.GENERAL_CONFIG.clear()
         _cfg.GENERAL_CONFIG.update(ckpt["gen_config"])
     m = GPT().to(device)
     if "gen_config" in ckpt:
