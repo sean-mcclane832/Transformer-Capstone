@@ -219,7 +219,11 @@ def train() -> None:
 
     # ── Normal training ────────────────────────────────────────────────────────
     ckpt_dir  = ROOT / "checkpoints"
-    log_path  = ROOT / "figures" / "run_log.pt"
+    run_name  = f"{ACTIVE_TIER}-{_arch_tag()}"          # e.g. "small-rope", "small-rope-gqa"
+    run_dir   = ROOT / "figures" / "runs" / run_name    # per-run archive dir
+    run_dir.mkdir(parents=True, exist_ok=True)
+    log_path  = ROOT / "figures" / "run_log.pt"         # shared "latest" path for plot_curves.py
+    run_log_path = run_dir / "run_log.pt"               # per-run archive copy
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log = {
         "train_steps": [], "train_losses": [], "lrs": [], "gnorms": [], "tokens_seen": [],
@@ -310,6 +314,7 @@ def train() -> None:
                 log["val_steps"].append(step)
                 log["val_losses"].append(val_loss)
                 torch.save(log, log_path)
+                torch.save(log, run_log_path)
                 if val_loss < best_loss:
                     best_loss = val_loss
                     save_checkpoint(model, optimizer, step, val_loss, ckpt_dir, tag="best")
@@ -330,6 +335,7 @@ def train() -> None:
     log["val_losses"].append(val_loss)
     log["pos_losses"] = evaluate_by_position(model, val_loader, device)
     torch.save(log, log_path)
+    torch.save(log, run_log_path)
     save_checkpoint(model, optimizer, step, val_loss, ckpt_dir, tag="final")
     print(f"\nDone. Final val loss: {val_loss:.4f} | ppl: {math.exp(min(val_loss, 20)):.2f}")
     print(f"Training log saved to {log_path}")
